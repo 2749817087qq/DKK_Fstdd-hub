@@ -1,15 +1,24 @@
 change_id: 2026-09-18-distributed-first-closure
 complexity_score: null
-current_phase: build
+current_phase: deliver
 design_adjustments:
   count: 0
-last_modified: '2026-09-18T00:36:10.578295'
+last_modified: '2026-09-17T17:37:31+00:00'
 mode: standard
 phases:
   build:
-    status: in_progress
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T17:37:31+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：开 —— P0-P5 全绿、三端收敛、31 passed、QA 有条件 Go（F1/F2 已修、F3 已补断言）
+    slices_completed:
+      A:
+        new_tests: 17
+        tc_coverage: P0,P1,P2,P3,P4a,P4b,P5,K1,K3,K5
+        verified_at: '2026-09-18T02:10:00+08:00'
+    status: completed
   deliver:
-    status: pending
+    status: in_progress
   spec:
     confirmed_actor: ai
     confirmed_at: '2026-09-18T00:36:10'
@@ -25,7 +34,7 @@ phases:
       分钟 / 6 步（00:31）。Q1 主战场 fstdd-hub 经产品官评审确认，P0 CLI canonical 探测通过。
     status: completed
 score_confidence: null
-status: active
+status: archived
 task_type: configuration
 traceability:
   spec_scenarios: 0
