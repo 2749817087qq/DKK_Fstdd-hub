@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-17-2026-09-17-project-bootstrap: proposals/2026-09-17-2026-09-17-project-bootstrap.yaml
+specs:
+  agent:
+    2026-09-17-2026-09-17-project-bootstrap: specs/agent/2026-09-17-2026-09-17-project-bootstrap.yaml
+  code:
+    2026-09-17-2026-09-17-project-bootstrap: specs/code/2026-09-17-2026-09-17-project-bootstrap.yaml
+version: '2.9'

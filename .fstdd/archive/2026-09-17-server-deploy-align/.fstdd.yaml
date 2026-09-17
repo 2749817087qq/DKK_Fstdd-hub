@@ -1,0 +1,42 @@
+change_id: 2026-09-17-server-deploy-align
+complexity_score: null
+current_phase: deliver
+design_adjustments:
+  count: 0
+last_modified: '2026-09-17T23:32:28.588117'
+mode: standard
+phases:
+  build:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T23:29:41'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：好 按照你方案来 走fstdd —— BUILD 完成（8/8 步、四文件 md5 一致、DB 零丢失、备份
+      timer 生效、本地 14 passed）
+    slices_completed:
+      A:
+        new_tests: 0
+        tc_coverage: STEP-01,STEP-02,STEP-03,STEP-04,STEP-05,STEP-06,STEP-07,STEP-08
+        verified_at: '2026-09-17T23:31:00+08:00'
+    status: completed
+  deliver:
+    status: in_progress
+  spec:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T23:21:53'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：好 按照你方案来 走fstdd —— SPEC 阶段 8 步操作 + 5 条预期结果已就绪
+    status: completed
+  understand:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T23:19:55'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：好 按照你方案来 走fstdd —— 授权执行服务器部署对齐（补齐缺失文件、幂等重跑部署、备份挂 timer）
+    status: completed
+score_confidence: null
+status: archived
+task_type: configuration
+traceability:
+  spec_scenarios: 0
+  tc_cases: 0
+  test_functions: 0
+version: '3.0'

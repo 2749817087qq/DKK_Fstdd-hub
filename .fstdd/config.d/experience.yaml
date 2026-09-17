@@ -1,0 +1,40 @@
+experience:
+  dir: .fstdd/experiences
+  auto_record:
+    enabled: true
+    min_confidence: 0.5
+  auto_load:
+    enabled: true
+    max_experiences: 10
+    match:
+      by_language: true
+      by_category: true
+      by_tags: true
+  lifecycle:
+    verified_threshold: 3
+    settled_threshold: 10
+    retire_after_days: 730
+  export:
+    sanitize_paths: true
+    sanitize_ips: true
+    sanitize_domains: true
+  index:
+    auto_generate: true
+
+community:
+  # 本项目（DKK_Fstdd）经验只回传到自有仓库 2749817087qq/Fstdd-experiences
+  #（经 tools/share_experience.py）。上游默认的三方 registry 已移除。
+  registries: []
+  fallback_timeout: 5
+  packs:
+    - name: python
+      version: "v1.0.0"
+    - name: go
+      version: "v1.0.0"
+
+# 经验回传（Phase 4 静默回传）开关。
+# 关闭后不发起任何回传网络请求，摘要明示「回传已跳过」。
+# 环境变量 FSTDD_NO_SHARE=1 优先于本配置（立即生效，适合临时/CI 场景）。
+share:
+  silent:
+    enabled: true

@@ -1,0 +1,110 @@
+# 2026-09-17-server-bare-repo-mirror.yaml — Canonical Proposal (YAML-first, V2.9)
+# AI 起草、AI 修改、AI 消费。Human View 由 `stdd canon generate` 生成。
+
+meta:
+  change_id: "2026-09-17-server-bare-repo-mirror"
+  title: "FSTDD 数据面落地：服务器权威裸库 + GitHub 自动镜像"
+  created: "2026-09-17T13:47:28.542055"
+  status: draft
+  version: "2.9"
+
+why:
+  problem: |
+    上一轮 change（2026-09-17-distributed-task-coordination）在 Gate 2 确认的 design 中，
+    把架构定为三层：L1 数据面（服务器 Git 裸库，唯一真值源）、L2 控制面（8788 SQLite）、
+    L3 节点本地（仓库外 worktree）。
+
+    但**只落地了 L2**。L1 至今是设计文档里的一段文字：
+
+      1. 服务器上根本不存在任何裸库 —— 6 个 agent 没有任何共同的真值源；
+      2. 没有镜像通道 —— 服务器直连 GitHub 实测 0.084s，这条快通道完全闲置；
+      3. 本地领先 GitHub 15 个提交未推送 —— 数据面处于「本地是事实上的唯一副本」状态，
+         而本地是单机，这正是分布式协作要消除的单点；
+      4. 6 个 agent 分布在 3 台开发机，若各自以本地仓库为准，必然退化为多副本漂移
+         （本项目 2026-09-16 已因手工 cp 发生过两次漂移）。
+
+    换句话说：**协作的控制面已经建好，但没有数据面可供协作**。本变更把 L1 从设计变成事实。
+
+  evidence: |
+    - 只读巡检实测：`find /home/ubuntu /srv /opt -maxdepth 3 -name "*.git" -type d`
+      返回空 —— 服务器上不存在任何裸库。
+    - 实测服务器 `git ls-remote https://github.com/.../DKK_Fstdd.git HEAD` → 0.084s 返回
+      `4c1fcb1`，直连 GitHub 通畅；对照本地经内置代理经常出现 502 / schannel 中断。
+      → 镜像放在服务器而非本地，是可用性上的明确更优解。
+    - 实测服务器 `ssh -T git@github.com` → `Permission denied (publickey)` ——
+      服务器没有任何 GitHub 凭证，镜像通道需要单独建设。
+    - 实测本地 `git rev-list --left-right --count HEAD...origin/master` → `15  0`
+      —— 本地领先 GitHub 15 个提交，且 GitHub 无本地缺失的提交（快进关系）。
+    - 实测服务器磁盘 `82% / 剩 11G`；裸库实测体积 1.5M，不构成水位风险，
+      但水位守卫仍应纳入运维检查项。
+    - 实测本地 `known_hosts` 存有该服务器三条主机密钥记录（ed25519/rsa/ecdsa），
+      其中 ECDSA 记录与服务端现状冲突并持续触发 MITM 告警 —— 该告警长期掩盖真实风险信号。
+
+what_changes:
+  - description: |
+      【数据面落地】在云服务器建立裸仓库作为**唯一真值源**，承载完整 git 历史与 tag；
+      各开发机以 git-over-ssh 访问。裸库创建幂等：已存在则保留数据，绝不重置。
+  - description: |
+      【镜像通道】服务器裸库经 post-receive 钩子自动镜像到 GitHub。
+      采用 **Deploy Key**（而非 PAT）作为凭证 —— 权限被限定在单个仓库、可独立吊销、
+      私钥不出服务器。镜像为非强制推送：GitHub 若出现分叉则失败并记录，
+      而不是静默覆盖他人提交。
+  - description: |
+      【凭证治理】GitHub 写权限不再以明文 PAT 形式散落在仓库配置中。
+      服务器侧私钥落 `/home/ubuntu/.ssh`（600），不进任何仓库；
+      本地 token 移出 remote URL 语义、收敛到工作区外的独立文件（600）。
+  - description: |
+      【主机密钥治理】清理 known_hosts 中该服务器的过期 ECDSA 记录，
+      写入当前有效的 ED25519/RSA 记录，消除持续误报的 MITM 告警，
+      使真实的主机密钥变更重新可见。
+  - description: |
+      【可重复部署】把上述手工步骤固化为幂等部署脚本，使「重建数据面」是一条命令，
+      而不是一份口口相传的操作清单。
+  - description: |
+      【接入指引】新增面向 6 个 agent 的多节点接入文档：明确唯一真值源、
+      SSH 别名配置、日常推拉与镜像核对方式、节点 id 约定、故障处置。
+      把「禁止跨机文件拷贝式同步」与「GitHub 不可达不阻塞流转」写成面向使用者的硬规则。
+
+capabilities:
+  new:
+    - name: "服务器权威裸库"
+      description: |
+        服务器上的裸仓库承载完整历史（master + tag），是跨机协作的唯一真值源。
+        创建幂等、可重复执行、已存在时保留数据。
+    - name: "GitHub 自动镜像"
+      description: |
+        推送落到服务器裸库后，由服务端钩子自动同步到 GitHub。
+        镜像凭证为仓库级 Deploy Key（写权限），私钥仅存于服务器。
+        镜像失败不影响本地与服务器的正常流转，且失败被记录而非静默。
+    - name: "幂等数据面部署"
+      description: |
+        一条命令完成「建裸库 → 配 remote → 建/复用镜像密钥 → 注册 Deploy Key →
+        配 ssh 与镜像 remote → 装钩子 → 端状态验证」，可安全反复执行。
+  modified:
+    - name: "本地 remote 拓扑"
+      description: |
+        新增 `server` remote 指向服务器裸库；`origin`（GitHub）语义由「主推送目标」
+        降级为「镜像目标」，与三层架构中 GitHub 的定位一致。
+    - name: "SSH 主机信任"
+      description: |
+        known_hosts 中该服务器的记录由「三条含过期 ECDSA」收敛为「当前有效的
+        ED25519 + RSA」，告警噪音消除。
+
+success_criteria:
+  - "服务器裸库存在且为 bare 库；其 master sha 与本地 master sha 完全一致"
+  - "服务器裸库含完整历史（提交数与本地一致）与全部 tag（含 fstdd-v1.0.0）"
+  - "服务器裸库 master 与 GitHub master 的 sha 一致（镜像已收敛）"
+  - "镜像凭证为仓库级 Deploy Key（read_only=false），且服务器上不存在明文 PAT"
+  - "部署脚本可安全重复执行：第二次运行不重置裸库、不重复注册密钥、不破坏已有数据"
+  - "端到端钩子验证：本地新提交推送到服务器后，GitHub 侧自动出现同一提交"
+  - "GitHub 侧出现分叉时镜像失败被记录，且不静默覆盖远端提交"
+  - "连接该服务器不再产生 MITM 告警（stderr 干净）"
+  - "既有工程测试套件保持全绿（基线 586 passed）"
+
+out_of_scope:
+  - "分支保护与强制门禁（属上一轮 design 的『服务端兜底门禁』，本变更不实施）"
+  - "多写者并发集成策略（master 仍为单写者集成线，逐条串行合并）"
+  - "裸库的自动备份到对象存储（服务器侧已有 inbox 数据备份范式，裸库可后续复用）"
+  - "以 Deploy Key 之外的机制（如 GitHub App）做更细粒度的权限控制"
+  - "磁盘水位自动清理（本变更仅记录水位现状，不引入清理动作）"
+  - "由 AI 自动确认任何 Gate（宪法明令禁止）"

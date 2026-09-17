@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-17-server-deploy-align: proposals/2026-09-17-server-deploy-align.yaml
+specs:
+  agent:
+    2026-09-17-server-deploy-align: specs/agent/2026-09-17-server-deploy-align.yaml
+  code:
+    2026-09-17-server-deploy-align: specs/code/2026-09-17-server-deploy-align.yaml
+version: '2.9'

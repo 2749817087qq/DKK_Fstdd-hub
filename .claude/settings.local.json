@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Python311\\python.exe\" \"D:\\tools\\FSTDD\\stdd-repo\\upstream\\bin\\fstdd\" guard check --platform claude-code --hook-stdin"
+          }
+        ]
+      }
+    ]
+  }
+}

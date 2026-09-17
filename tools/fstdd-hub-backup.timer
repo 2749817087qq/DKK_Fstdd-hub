@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily backup of FSTDD hub SQLite database
+Requires=fstdd-hub-backup.service
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

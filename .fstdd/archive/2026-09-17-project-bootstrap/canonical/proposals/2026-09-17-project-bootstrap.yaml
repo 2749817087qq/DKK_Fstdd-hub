@@ -1,0 +1,46 @@
+# 2026-09-17-project-bootstrap.yaml — Canonical Proposal (YAML-first, V2.9)
+# AI 起草、AI 修改、AI 消费。Human View 由 `stdd canon generate` 生成。
+
+meta:
+  change_id: "2026-09-17-project-bootstrap"
+  title: "多机多 agent 协作程序独立建项（fstdd-hub）"
+  created: "2026-09-17T23:00:45.077633"
+  status: draft
+  version: "2.9"
+
+why:
+  problem: |
+    多机多 agent 协作程序的代码此前散落在 stdd-repo（FSTDD 框架自身仓库）的
+    tools/、upstream/tests/、docs/ 之下，与框架代码混杂。这带来三个实质问题：
+    一是迭代成本被框架绑架——协作程序的任何改动都要走框架仓库的 Gate 与全量回归
+    （639 用例，约 7 分钟）；二是归属与依赖不清——它是独立交付物，却依赖框架仓库
+    的目录层级，测试的仓库根定位写死为 parents[2]（指向 stdd-repo/upstream/tests/），
+    换个位置就跑不起来；三是无法独立演进——要为它配 CI、发版、接入新节点，
+    都得先动框架仓库。本 change 将其迁出为独立项目 fstdd-hub，用 FSTDD 初始化，
+    确立结构、测试基线与文档体系，使其此后可独立走四相位与 3 个 Gate。
+
+what_changes:
+  - description: "新建独立项目 D:/tools/FSTDD/fstdd-hub，执行 fstdd init 完成初始化（.fstdd/ 骨架 + Guard 钩子 + FSTDD_CONSTITUTION.md + AGENTS.md）"
+  - description: "迁移控制面与节点本地代码：tools/fstdd_hub.py、tools/fstdd_git.py，以及运维脚本 deploy_hub.sh、hub_backup.sh、hub_healthcheck.py（保留可执行位）"
+  - description: "迁移测试至 tests/：test_fstdd_hub.py、test_fstdd_git.py；将其仓库根定位由 parents[2] 修正为 parents[1]，以适配新层级"
+  - description: "迁移文档至 docs/：DISTRIBUTED_ACCESS.md、01-原始设计方案、02-执行情况核查、03-PRD与开发计划、04-数据库设计；两个历史归档 change 存入 docs/history/ 作为溯源"
+  - description: "确立可独立运行的测试基线：项目根目录下 pytest tests/ 输出 14 passed"
+
+capabilities:
+  new:
+    - name: "独立项目骨架"
+      description: "fstdd-hub 作为独立项目存在，拥有自己的 .fstdd/ 骨架、Guard 钩子与宪法，可独立走 UNDERSTAND→SPEC→BUILD→DELIVER 四相位与 3 个 Gate，不再依附 stdd-repo"
+    - name: "可独立运行的测试基线"
+      description: "在 fstdd-hub 根目录下执行 pytest tests/ 即可跑通控制面 14 项测试，不依赖 stdd-repo 的 upstream/ 层级或 639 用例全量回归"
+  modified:
+    - name: "测试仓库根定位"
+      description: "test_fstdd_hub.py 与 test_fstdd_git.py 的定位由 parents[2]（适配 stdd-repo/upstream/tests/）改为 parents[1]（适配 fstdd-hub/tests/），属迁移适配，不改任何断言与业务逻辑"
+
+success_criteria:
+  - "fstdd-hub 根目录下 C:/Python311/python.exe -m pytest tests/ -q 输出 14 passed、0 failed"
+  - "项目根存在 .fstdd/（含 config.d/、skills/、templates/、canonical/）、AGENTS.md、FSTDD_CONSTITUTION.md，且 Guard 已激活"
+  - "tools/ 下 5 个文件齐全：fstdd_hub.py、fstdd_git.py、deploy_hub.sh、hub_backup.sh、hub_healthcheck.py，且 .sh 保留可执行位"
+  - "docs/ 下含 DISTRIBUTED_ACCESS.md 与 01-design-original.md、02-status-review.md、03-prd-and-devplan.md、04-db-design.md 四份文档"
+  - "docs/history/ 下含 2026-09-17-distributed-task-coordination 与 2026-09-17-server-bare-repo-mirror 两个归档 change 作为设计溯源"
+  - "迁移以复制方式完成，stdd-repo 侧原文件保持不变；是否从原仓库移除由 D哥 另行决定"
+  - "新项目存在活跃 change（本 change）且处于 UNDERSTAND 相位，可被 fstdd status 正确识别"

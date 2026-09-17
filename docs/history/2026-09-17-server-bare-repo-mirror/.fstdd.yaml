@@ -1,0 +1,55 @@
+change_id: 2026-09-17-server-bare-repo-mirror
+complexity_score: null
+current_phase: deliver
+design_adjustments:
+  count: 0
+last_modified: '2026-09-17T14:17:05.605498'
+mode: standard
+phases:
+  build:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T14:17:05'
+    confirmed_by: dialog
+    confirmed_evidence: D哥确认 Gate 3：数据面落地已完成并验证 —— 16 项 TC 全通过、全量回归 592 passed/0 failed、本地/裸库/GitHub
+      三方 sha 收敛一致、部署脚本幂等可重建。同意归档。
+    slices_completed:
+      A:
+        new_tests: 0
+        tc_coverage: TC-SBR-001,TC-SBR-002,TC-SBR-003,TC-SBR-004,TC-SBR-011
+        verified_at: '2026-09-17T14:02:00'
+      B:
+        new_tests: 0
+        tc_coverage: TC-SBR-005,TC-SBR-006,TC-SBR-007,TC-SBR-008,TC-SBR-009,TC-SBR-010,TC-SBR-012
+        verified_at: '2026-09-17T14:03:00'
+      C:
+        new_tests: 0
+        tc_coverage: TC-SBR-013,TC-SBR-014
+        verified_at: '2026-09-17T14:04:00'
+      D:
+        new_tests: 6
+        tc_coverage: TC-SBR-015,TC-SBR-016,TC-SBR-017
+        verified_at: '2026-09-17T14:12:00'
+    status: completed
+  deliver:
+    status: in_progress
+  spec:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T13:49:09'
+    confirmed_by: dialog
+    confirmed_evidence: D哥确认：方案可执行，允许进入 BUILD 并执行（原文「确认 可执行」「继续」）。数据面设计沿用上一轮 Gate
+      2 已确认的三层架构，凭证改用仓库级 Deploy Key。
+    status: completed
+  understand:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T13:49:03'
+    confirmed_by: dialog
+    confirmed_evidence: D哥指令：补建服务器裸库 + GitHub 镜像（最核心，且不依赖 agent 信息，现在就能做），随后两次「继续」授权执行。
+    status: completed
+score_confidence: null
+status: archived
+task_type: code
+traceability:
+  spec_scenarios: 0
+  tc_cases: 0
+  test_functions: 0
+version: '3.0'

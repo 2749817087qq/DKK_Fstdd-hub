@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-17-server-bare-repo-mirror: proposals/2026-09-17-server-bare-repo-mirror.yaml
+specs:
+  agent:
+    2026-09-17-server-bare-repo-mirror: specs/agent/2026-09-17-server-bare-repo-mirror.yaml
+  code:
+    2026-09-17-server-bare-repo-mirror: specs/code/2026-09-17-server-bare-repo-mirror.yaml
+version: '2.9'

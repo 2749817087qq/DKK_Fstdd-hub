@@ -1,0 +1,33 @@
+# agent_spec.yaml — Agent 验证规格（Canonical YAML）
+
+meta:
+  task_id: "project-bootstrap"
+  change_id: "2026-09-17-project-bootstrap"
+  created: "2026-09-17T23:00:45.077633"
+  task_type: code
+  system: "FSTDD 多机多 agent 协作程序独立项目：D:/tools/FSTDD/fstdd-hub"
+
+preconditions:
+  - "源仓库 D:/tools/FSTDD/stdd-repo 中存在协作程序代码（tools/）、测试（upstream/tests/）与接入文档（docs/DISTRIBUTED_ACCESS.md）"
+  - "本机可用 C:/Python311/python.exe 执行 pytest；托管 python 3.13.12 未安装 pytest，不可用于跑测试"
+  - "新项目目录尚不存在，或为空目录"
+
+steps:
+  - action: "在 D:/tools/FSTDD/ 下新建 fstdd-hub 目录，并在该目录内执行 fstdd init"
+    verify: "目录内出现 .fstdd/（含 config.d、skills、templates、canonical、changes、archive、specs）、AGENTS.md、FSTDD_CONSTITUTION.md；Guard 钩子写入 .claude 与 .codebuddy 的 settings.local.json"
+  - action: "以 cp -p 复制五个代码文件到新项目 tools/，保留可执行位"
+    verify: "ls -la tools/ 显示 deploy_hub.sh、hub_backup.sh、hub_healthcheck.py 具备可执行权限，五个文件均存在"
+  - action: "复制两个测试文件到新项目 tests/，并将其仓库根定位由 parents[2] 改为 parents[1]"
+    verify: "grep 确认两文件中已无 parents[2]；除该定位外不改动任何断言与业务逻辑"
+  - action: "在项目根执行 pytest tests/ -q 验证可独立运行"
+    verify: "输出 14 passed、0 failed，且不依赖 stdd-repo 的 639 用例全量回归"
+  - action: "复制文档到 docs/，并将两个历史归档 change 复制到 docs/history/"
+    verify: "docs/ 下含 DISTRIBUTED_ACCESS.md 与 01 至 04 四份编号文档；docs/history/ 下含两个归档 change 目录"
+  - action: "确认原仓库未被破坏"
+    verify: "stdd-repo 中对应文件仍存在且内容未变；本次全程使用复制，未执行任何删除或改名"
+
+expected_outcomes:
+  - "新项目可独立走 UNDERSTAND、SPEC、BUILD、DELIVER 四相位与 3 个 Gate，不再依附 stdd-repo"
+  - "测试可在新项目内独立运行，迭代成本不再被框架仓库的全量回归绑架"
+  - "代码、测试、文档与历史溯源集中于一处，形成完整的独立交付物"
+  - "原仓库零改动，迁移可逆"

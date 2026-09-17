@@ -1,0 +1,51 @@
+change_id: 2026-09-17-distributed-task-coordination
+complexity_score: null
+current_phase: deliver
+design_adjustments:
+  count: 0
+last_modified: '2026-09-17T12:13:41.566994'
+mode: standard
+phases:
+  build:
+    confirmed_actor: user
+    confirmed_at: '2026-09-17T12:13:41'
+    confirmed_by: dialog
+    confirmed_evidence: D哥确认 Gate 3：Slice A-D 已完成；8788 云端已部署到 127.0.0.1:8788，systemd
+      active，health 正常，SQLite 备份已生成；全量测试 586 passed/0 failed，允许进入 DELIVER。
+    slices_completed:
+      A:
+        new_tests: 7
+        tc_coverage: TC-GATE-110,TC-GATE-111,TC-GATE-112,TC-GATE-113;phase-record-slice
+        verified_at: '2026-09-17T11:05:00'
+      C:
+        new_tests: 6
+        tc_coverage: TC-DTC-007,TC-DTC-008,TC-DTC-016
+        verified_at: '2026-09-17T11:45:00'
+      D:
+        new_tests: 3
+        tc_coverage: TC-DTC-009,TC-DTC-010
+        verified_at: '2026-09-17T12:00:00'
+    status: completed
+  deliver:
+    status: in_progress
+  spec:
+    confirmed_actor: user
+    confirmed_at: '2026-09-17T10:52:42'
+    confirmed_by: dialog
+    confirmed_evidence: D哥确认：已审阅分布式任务规划与执行方案的 design、spec、test-plan，确认方案可执行，进入 BUILD。
+    status: completed
+  understand:
+    confirmed_actor: user
+    confirmed_at: '2026-09-17T09:59:50'
+    confirmed_by: dialog
+    confirmed_evidence: D哥 确认：认可 Phase 1 proposal，进入 SPEC。附带确认两项：① 两个遗留 change 先核实实际产物再决定归档/abort；②
+      三个工具链缺陷（batch/canon 的 --dry-run 写盘、canon 丢弃 out_of_scope）纳入本 change。
+    status: completed
+score_confidence: null
+status: archived
+task_type: code
+traceability:
+  spec_scenarios: 0
+  tc_cases: 0
+  test_functions: 0
+version: '3.0'

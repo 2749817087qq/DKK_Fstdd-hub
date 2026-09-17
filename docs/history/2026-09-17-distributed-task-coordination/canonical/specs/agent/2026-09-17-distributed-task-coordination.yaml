@@ -1,0 +1,46 @@
+# agent_spec.yaml - Agent 验证规格（Canonical YAML）
+meta:
+  task_id: "distributed-task-coordination-verify"
+  change_id: "2026-09-17-distributed-task-coordination"
+  created: "2026-09-17T10:45:00+08:00"
+  task_type: code
+  system: "6 个 AI agent / 3 台开发机；服务器 Git 裸库为数据面，8788 为 SSH 内部控制面，8787 经验端点保持隔离"
+
+preconditions:
+  - "法定源为 `D:/tools/FSTDD/stdd-repo`，当前 Change 已进入 SPEC"
+  - "本节点 id 为 `FSTDD005`；其他节点 id 由注册表配置，不得硬编码"
+  - "测试解释器为 `C:/Python311/python.exe`"
+  - "所有代码修改必须在 Gate 2 后的 BUILD active Change 内完成"
+  - "服务器远端操作必须幂等，并用端状态验证"
+
+steps:
+  - id: CP-001
+    action: "检查设计文档、canonical code spec、agent spec 和 test-plan 的双轨一致性"
+    verify: "`fstdd canon verify 2026-09-17-distributed-task-coordination` 通过；REQ/SC 与文档互相可追溯"
+  - id: CP-002
+    action: "在隔离测试项目中创建两个并发 claim 请求"
+    verify: "同一任务最多一个 owner；另一个请求得到 204 或 409；数据库状态无重复分配"
+  - id: CP-003
+    action: "重复提交创建、领取、完成和消息请求"
+    verify: "相同幂等键返回首次结果且无重复记录；不同 payload 使用相同键返回冲突"
+  - id: CP-004
+    action: "让任务 lease 过期后由另一节点查询任务池"
+    verify: "任务可回收为 pending；旧 lease token 的 complete/fail 被拒绝"
+  - id: CP-005
+    action: "执行 `fstdd gate amend-audit` 的成功与拒绝场景"
+    verify: "成功时追加 audit_amendments[] 且原始字段不变；缺 evidence、无原 Gate、重复冲突均被拒绝或幂等处理"
+  - id: CP-006
+    action: "在两个外部 worktree 中并行执行无重叠任务，再尝试重叠 scope"
+    verify: "无重叠任务允许并行；重叠 scope 被强制串行；master 只能由集成者串行更新"
+  - id: CP-007
+    action: "部署 8788 并检查 8787 与 8788 的监听地址、systemd unit、数据目录"
+    verify: "8788 只监听 127.0.0.1 且使用独立 SQLite/unit；8787 路由、数据和服务未被改变"
+  - id: CP-008
+    action: "运行全量测试、EOL/skill/结构校验和失败模式检查"
+    verify: "所有测试通过；无敏感凭证进入仓库；GitHub 不可达、节点掉线、Git 冲突和 SSH 双执行均有可执行处置记录"
+
+expected_outcomes:
+  - "任务协调状态、Git 数据面状态和 FSTDD phase/Gate 状态职责分离"
+  - "任务领取、租约、消息和回传具备事务性与幂等性"
+  - "本节点以 `FSTDD005` 注册，其他节点参数化"
+  - "主 change 的 Gate 2 前不修改实现代码；Gate 3 前不归档"

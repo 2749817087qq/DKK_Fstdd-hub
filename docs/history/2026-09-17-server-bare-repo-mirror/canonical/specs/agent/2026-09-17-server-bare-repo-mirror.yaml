@@ -1,0 +1,49 @@
+# agent_spec.yaml - Agent 验证规格（Canonical YAML）
+meta:
+  task_id: "server-bare-repo-mirror-verify"
+  change_id: "2026-09-17-server-bare-repo-mirror"
+  created: "2026-09-17T13:50:00+08:00"
+  task_type: code
+  system: "6 个 AI agent / 3 台开发机；服务器裸库为 L1 数据面真值源，GitHub 为镜像；8788 控制面与 8787 经验端点保持隔离"
+
+preconditions:
+  - "法定源为 `D:/tools/FSTDD/stdd-repo`，当前 Change 已进入 BUILD"
+  - "本节点 id 为 `FSTDD005`；其他节点 id 由注册表配置，不得硬编码"
+  - "测试解释器为 `C:/Python311/python.exe`"
+  - "服务器远端操作必须幂等，且用端状态验证（不看命令回显）"
+  - "裸库路径 `/home/ubuntu/fstdd-git/stdd-repo.git`，镜像 remote 名为 `github`"
+
+steps:
+  - id: CP-001
+    action: "检查 canonical proposal / code spec / agent spec / design / test-plan 的双轨一致性"
+    verify: "`fstdd canon verify 2026-09-17-server-bare-repo-mirror` 通过；REQ/SC 与文档互相可追溯"
+  - id: CP-002
+    action: "执行数据面部署脚本，随后核对裸库端状态"
+    verify: "裸库 is-bare-repository=true；裸库 master sha 与本地 master sha 完全一致；提交数与 tag 完整"
+  - id: CP-003
+    action: "再次执行同一部署脚本（幂等验证）"
+    verify: "裸库未被重置、数据保留；镜像密钥被复用；Deploy Key 未重复注册"
+  - id: CP-004
+    action: "核对镜像凭证形态与落盘位置"
+    verify: "GitHub 侧存在名为 fstdd-hub-mirror 且 read_only=false 的 Deploy Key；服务器上无私钥以外的明文凭证"
+  - id: CP-005
+    action: "在服务器执行 GitHub 认证与镜像连通性检查"
+    verify: "`ssh -T git@github.com` 返回识别出目标仓库；`git ls-remote github` 可读到 refs"
+  - id: CP-006
+    action: "制造一次真实提交并推送到服务器裸库，观察钩子行为"
+    verify: "GitHub 侧出现同一提交（sha 一致）；镜像日志记录 [OK]；推送返回成功"
+  - id: CP-007
+    action: "检查镜像失败路径不静默覆盖"
+    verify: "钩子使用非强制推送；失败写入 mirror.log 且不改变裸库状态"
+  - id: CP-008
+    action: "核对 SSH 主机信任记录并复测连接"
+    verify: "known_hosts 记录与服务器当前主机密钥指纹一致；连接 stderr 为空（无 MITM 告警）"
+  - id: CP-009
+    action: "运行全量工程测试与结构/EOL 校验"
+    verify: "测试保持全绿（基线 586 passed）；无凭证进入仓库"
+
+expected_outcomes:
+  - "L1 数据面从设计文字变为可验证事实：服务器裸库存在、完整、可被多机访问"
+  - "GitHub 镜像自动且安全：最小权限凭证、失败可见、不静默覆盖"
+  - "数据面重建是一条幂等命令，而非口口相传的操作清单"
+  - "SSH 告警噪音消除，真实的主机密钥变更重新可见"

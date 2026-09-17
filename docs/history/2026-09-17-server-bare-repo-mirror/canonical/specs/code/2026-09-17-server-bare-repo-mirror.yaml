@@ -1,0 +1,130 @@
+# spec.yaml - 行为规格（Canonical YAML）
+meta:
+  capability: "server-bare-repo-mirror"
+  change_id: "2026-09-17-server-bare-repo-mirror"
+  created: "2026-09-17T13:50:00+08:00"
+  confidence: high
+
+requirements:
+  - id: REQ-001
+    description: "服务器裸库必须作为跨机协作的唯一数据面真值源，且创建过程幂等"
+    scenarios:
+      - id: SC-001
+        confidence: high
+        evidence: "巡检实测服务器上不存在任何裸库；L1 数据面此前仅为设计文字"
+        given: "服务器可达且具备 git"
+        when: "执行数据面部署"
+        then: "系统 SHALL 在约定路径创建 bare 仓库"
+        and:
+          - "裸库 SHALL 承载完整 master 历史与全部 tag"
+          - "裸库 master sha SHALL 与部署发起方 master sha 一致"
+      - id: SC-002
+        confidence: high
+        evidence: "部署脚本必须可反复执行（远端命令存在执行两次的环境特性）"
+        given: "裸库已存在且含有提交"
+        when: "再次执行数据面部署"
+        then: "系统 SHALL 保留已有数据且不重置仓库"
+        and:
+          - "重复执行 SHALL NOT 产生非幂等副作用"
+
+  - id: REQ-002
+    description: "服务器裸库必须以非强制方式自动镜像到 GitHub"
+    scenarios:
+      - id: SC-003
+        confidence: high
+        evidence: "实测服务器直连 GitHub 0.084s，本地经代理常 502"
+        given: "服务器裸库配置了 GitHub 镜像 remote 与有效凭证"
+        when: "一次推送落到服务器裸库"
+        then: "服务端钩子 SHALL 自动将分支与 tag 镜像到 GitHub"
+        and:
+          - "镜像 SHALL 在推送返回前完成或已完成尝试"
+      - id: SC-004
+        confidence: high
+        evidence: "GitHub 为镜像而非真值源；静默覆盖会掩盖他人提交"
+        given: "GitHub 侧存在服务器裸库所没有的提交"
+        when: "钩子执行镜像"
+        then: "镜像 SHALL 失败并被记录到日志"
+        and:
+          - "系统 SHALL NOT 静默强制覆盖远端提交"
+      - id: SC-005
+        confidence: high
+        evidence: "GitHub 不可达不得阻塞任何流转（上一轮 design 决策）"
+        given: "镜像目标不可达"
+        when: "推送落到服务器裸库"
+        then: "推送 SHALL 成功返回"
+        and:
+          - "镜像失败 SHALL NOT 影响裸库自身状态"
+
+  - id: REQ-003
+    description: "镜像凭证必须遵循最小权限，且不得以明文形式散落"
+    scenarios:
+      - id: SC-006
+        confidence: high
+        evidence: "服务器为公网机器；PAT 泄露等于账号沦陷"
+        given: "需要为服务器授予 GitHub 写权限"
+        when: "配置镜像凭证"
+        then: "凭证 SHALL 为限定到单一仓库的 Deploy Key"
+        and:
+          - "Deploy Key SHALL 具备写权限（read_only=false）"
+          - "私钥 SHALL 仅存在于服务器且权限为 600"
+      - id: SC-007
+        confidence: high
+        evidence: "实测服务器 ssh -T git@github.com 返回 Permission denied，说明其无任何凭证"
+        given: "凭证配置完成"
+        when: "服务器执行 GitHub 认证测试"
+        then: "认证 SHALL 成功并识别出目标仓库"
+        and:
+          - "服务器上 SHALL NOT 存在明文 PAT"
+
+  - id: REQ-004
+    description: "数据面部署必须固化为可重复执行的脚本，并以端状态验证结果"
+    scenarios:
+      - id: SC-008
+        confidence: high
+        evidence: "手工步骤不可重复；远端命令回显可能是两次执行中某一次"
+        given: "存在数据面部署脚本"
+        when: "执行部署脚本"
+        then: "脚本 SHALL 完成建库、配 remote、配凭证、装钩子与验证"
+        and:
+          - "验证 SHALL 读取端状态（rev-parse / ls-remote）而非命令回显"
+      - id: SC-009
+        confidence: high
+        evidence: "凭证与密钥需可重复复用"
+        given: "镜像密钥与 Deploy Key 已存在"
+        when: "再次执行部署脚本"
+        then: "系统 SHALL 复用既有密钥"
+        and:
+          - "系统 SHALL NOT 重复注册 Deploy Key"
+
+  - id: REQ-005
+    description: "SSH 主机信任必须与服务器实际密钥一致，不得残留过期记录"
+    scenarios:
+      - id: SC-010
+        confidence: high
+        evidence: "known_hosts 含过期 ECDSA 记录，持续触发 MITM 告警"
+        given: "本地 known_hosts 存有该服务器的过期主机密钥记录"
+        when: "更新主机信任记录"
+        then: "记录 SHALL 与服务器当前提供的主机密钥一致"
+        and:
+          - "更新前 SHALL 备份原文件"
+          - "指纹 SHALL 经核对确认（排除中间人）"
+      - id: SC-011
+        confidence: high
+        evidence: "告警噪音会掩盖真实的主机密钥变更"
+        given: "主机信任记录已更新"
+        when: "连接该服务器"
+        then: "连接 SHALL 不产生主机密钥告警"
+        and:
+          - "连接的 stderr SHALL 为空"
+
+  - id: REQ-006
+    description: "数据面不得破坏既有工程约束"
+    scenarios:
+      - id: SC-012
+        confidence: high
+        evidence: "宪法要求改动后全量测试保持绿"
+        given: "数据面变更已完成"
+        when: "运行既有工程测试套件"
+        then: "测试 SHALL 保持全绿"
+        and:
+          - "基线为 586 passed"

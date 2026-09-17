@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-17-distributed-task-coordination: proposals/2026-09-17-distributed-task-coordination.yaml
+specs:
+  agent:
+    2026-09-17-distributed-task-coordination: specs/agent/2026-09-17-distributed-task-coordination.yaml
+  code:
+    2026-09-17-distributed-task-coordination: specs/code/2026-09-17-distributed-task-coordination.yaml
+version: '2.9'

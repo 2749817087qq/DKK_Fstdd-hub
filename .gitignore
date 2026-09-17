@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# 本地数据：hub 的 SQLite 库与备份不应入库（含 WAL/SHM 伴生文件）
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# 日志
+*.log
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

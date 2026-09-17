@@ -1,0 +1,40 @@
+# agent_spec.yaml — Agent 验证规格（Canonical YAML）
+
+meta:
+  task_id: "server-deploy-align"
+  change_id: "2026-09-17-server-deploy-align"
+  created: "2026-09-17T23:17:35.350823"
+  task_type: configuration
+  system: "FSTDD 多机协作控制面：服务器 ubuntu@43.134.236.80 上的 fstdd-hub 服务（systemd，监听 127.0.0.1:8788，SQLite 存储）"
+
+preconditions:
+  - "本地独立项目 D:/tools/FSTDD/fstdd-hub 已建立，tools/ 下 fstdd_hub.py、fstdd_git.py、deploy_hub.sh、hub_backup.sh、hub_healthcheck.py 五文件齐全，且 pytest tests/ 输出 14 passed"
+  - "服务器 fstdd-hub.service 处于 enabled 且 active，监听仅为 127.0.0.1:8788"
+  - "服务器已存在 fstdd_hub.py 与 hub_backup.sh，md5 与本地一致（零 drift），但缺失 fstdd_git.py、hub_healthcheck.py、deploy_hub.sh"
+  - "数据库基线已记录：/home/ubuntu/fstdd-hub/fstdd-hub.sqlite3 中 nodes=1、tasks=0、idempotency=2、messages=2"
+  - "本机 SSH 别名 fstdd-hub 可用；禁止使用裸主机名（会绕过 ssh config 的 IdentityFile 导致认证失败）"
+
+steps:
+  - action: "记录部署前基线：systemctl is-active fstdd-hub、ss -lntp 过滤 8788、服务器现有文件 md5、数据库各表行数、backups 目录文件数"
+    verify: "基线写入本 change 的 test-report.md，供部署后逐项比对"
+  - action: "用 scp 将本地 fstdd-hub/tools/fstdd_git.py 与 hub_healthcheck.py 上传至服务器 /home/ubuntu/fstdd-hub-server/"
+    verify: "服务器端 md5sum 与本地 md5sum 逐一比对，四个文件（含原有 fstdd_hub.py、hub_backup.sh）全部一致"
+  - action: "以新项目 tools/ 为来源执行 deploy_hub.sh；因内容与服务器现有版本一致，此步为幂等操作"
+    verify: "systemctl is-active fstdd-hub 返回 active；ss 显示绑定仅为 127.0.0.1:8788，不得出现 0.0.0.0"
+  - action: "数据库原地接管：沿用 /home/ubuntu/fstdd-hub/fstdd-hub.sqlite3，不做任何数据迁移"
+    verify: "只读 SQL 查询各表行数，与基线完全一致：nodes=1、tasks=0、idempotency=2、messages=2"
+  - action: "创建 fstdd-hub-backup.service 与 fstdd-hub-backup.timer，用 systemctl enable --now 挂载定时"
+    verify: "systemctl list-timers 输出中出现该 timer，且 NEXT 触发时间已排定"
+  - action: "手动触发一次备份（systemctl start fstdd-hub-backup.service）验证链路可用"
+    verify: "/home/ubuntu/fstdd-hub/backups/ 目录新增至少 1 个 sqlite3 备份文件"
+  - action: "端到端复验：建立 SSH 端口转发后访问健康检查接口"
+    verify: "curl 经本地转发端口访问 /health 返回 ok"
+  - action: "复跑本地测试，确认新项目侧未被本次操作影响"
+    verify: "在 D:/tools/FSTDD/fstdd-hub 下执行 pytest tests/ -q，仍为 14 passed"
+
+expected_outcomes:
+  - "服务器四文件 md5 与本地 fstdd-hub/tools/ 完全一致，L3 侧能力缺失与线上验证盲区同时消除"
+  - "服务持续 active，绑定地址仍为 127.0.0.1，未因部署动作被放宽到 0.0.0.0"
+  - "数据库零丢失，各表行数与基线一致"
+  - "备份 timer 生效，hub_backup.sh 的 14 天轮转逻辑真正可运行"
+  - "全程无破坏性操作，未出现超过 RestartSec=5 的服务中断"

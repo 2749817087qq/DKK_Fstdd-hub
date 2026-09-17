@@ -1,0 +1,12 @@
+[Unit]
+Description=FSTDD hub SQLite backup (WAL checkpoint + online backup)
+Documentation=file:/home/ubuntu/fstdd-hub-server/hub_backup.sh
+After=fstdd-hub.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/fstdd-hub-server
+ExecStart=/usr/bin/bash /home/ubuntu/fstdd-hub-server/hub_backup.sh
+StandardOutput=append:/home/ubuntu/fstdd-hub/backup.log
+StandardError=append:/home/ubuntu/fstdd-hub/backup.log

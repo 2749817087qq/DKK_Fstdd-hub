@@ -1,0 +1,10 @@
+# 统一行尾：仓库内存 LF，检出时按平台转换
+# 与 stdd-repo 保持一致，避免 CRLF 混入导致的哈希与 diff 噪声
+* text=auto eol=lf
+
+# 二进制与无需转换的类型
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.sqlite3 binary
