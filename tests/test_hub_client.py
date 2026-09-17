@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 import pathlib
+import socket
 import sys
 import threading
 import unittest
@@ -128,6 +129,8 @@ class HubClientTest(unittest.TestCase):
         for field in ("node_id", "machine_name", "platform", "os", "ssh_fingerprint"):
             self.assertIn(field, payload)
         self.assertEqual(payload["capabilities"], ["code"])
+        # 变异体防护：machine_name 曾被写死，不再回退本机 hostname
+        self.assertEqual(payload["machine_name"], socket.gethostname())
 
     def test_register_is_repeatable(self):
         """同一 node_id 连跑两次，第二次依然 200（中枢 ON CONFLICT DO UPDATE）。"""
@@ -143,11 +146,17 @@ class HubClientTest(unittest.TestCase):
     # ------------------------------------------------------------ 任务
 
     def test_create_task_requires_base_sha(self):
-        self.hub.create_task("parent-1", "do something", "abc1234")
+        scope = {"paths": ["tools/x.py"]}
+        self.hub.create_task("parent-1", "do something", "abc1234",
+                             scope=scope, child_change_id="child-1")
         _, path, payload = REQUESTS[-1]
         self.assertEqual(path, "/tasks")
         self.assertEqual(payload["base_git_sha"], "abc1234")
         self.assertEqual(payload["parent_change_id"], "parent-1")
+        # 变异体防护：以下三个字段曾被「漏传」却仍能全绿
+        self.assertEqual(payload["summary"], "do something")
+        self.assertEqual(payload["scope"], scope)
+        self.assertEqual(payload["child_change_id"], "child-1")
         self.assertIn("idempotency_key", payload)
 
     def test_claim_returns_body(self):
@@ -172,12 +181,17 @@ class HubClientTest(unittest.TestCase):
         self.assertEqual(payload["lease_seconds"], 1800)
 
     def test_complete_pins_result_sha(self):
-        self.hub.complete("t1", "tok", "node-1", "deadbeef", result_ref="refs/heads/master")
+        self.hub.complete("t1", "tok", "node-1", "deadbeef",
+                          result_ref="refs/heads/master",
+                          result={"files": ["tools/x.py"]})
         _, path, payload = REQUESTS[-1]
         self.assertEqual(path, "/tasks/t1/complete")
         self.assertEqual(payload["result_git_sha"], "deadbeef")
         self.assertEqual(payload["lease_token"], "tok")
         self.assertEqual(payload["node_id"], "node-1")
+        # 变异体防护：产物引用与产物清单曾被漏传却仍能全绿
+        self.assertEqual(payload["result_ref"], "refs/heads/master")
+        self.assertEqual(payload["result"], {"files": ["tools/x.py"]})
         self.assertIn("idempotency_key", payload)
 
     def test_fail_requires_summary(self):
@@ -186,6 +200,12 @@ class HubClientTest(unittest.TestCase):
         self.assertEqual(path, "/tasks/t1/fail")
         self.assertEqual(payload["summary"], "boom")
         self.assertEqual(payload["status"], "failed")
+
+    def test_fail_accepts_blocked_status(self):
+        """变异体防护：status 曾被写死为 failed，调用方传 blocked 会被静默改写。"""
+        self.hub.fail("t1", "tok", "node-1", "waiting on review", status="blocked")
+        self.assertEqual(REQUESTS[-1][2]["status"], "blocked")
+        self.assertEqual(REQUESTS[-1][2]["summary"], "waiting on review")
 
     # ------------------------------------------------------------ CLI
 

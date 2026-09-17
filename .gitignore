@@ -21,3 +21,9 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# 中枢会话凭据（含 lease_token 明文）——绝不可入库
+# 2026-09-18 QA 发现：FSTDD 把 session 写在 change 目录下，而 .fstdd/ 要入库，
+# 下一个闭环会把 live 的 lease_token 推上公开仓库。
+.hub_session.json
+**/.hub_session.json
