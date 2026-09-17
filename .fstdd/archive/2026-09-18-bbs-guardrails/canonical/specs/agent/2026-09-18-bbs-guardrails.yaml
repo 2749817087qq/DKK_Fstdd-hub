@@ -1,0 +1,36 @@
+# agent_spec.yaml — Agent 验证规格（Canonical YAML）
+
+meta:
+  task_id: "bbs-guardrails-verification"
+  change_id: "2026-09-18-bbs-guardrails"
+  created: "2026-09-17T18:18:42+00:00"
+  task_type: code
+  system: "FSTDD 中枢 fstdd_hub.py（仅听 127.0.0.1:8788，本地需经 SSH 隧道访问）"
+
+preconditions:
+  - "SSH 隧道已建立：ssh -M -S /tmp/fstdd-tunnel.sock -fN -L 8788:127.0.0.1:8788 fstdd-hub"
+  - "至少有一个已注册节点（fstdd005-win-dev）"
+  - "本地测试基线：pytest tests/ 为 37 passed"
+
+steps:
+  - action: "用 Python 脚本改服务端：connect_db 加 PRAGMA foreign_keys=ON；_message 加 task_id 存在性校验；_ack 拦截 BBS 留言"
+    verify: "py_compile 通过；grep 确认三处改动均已落地"
+
+  - action: "本地起临时实例（临时 DB、临时端口）验证 SC-001 / SC-002 / SC-003 / SC-004"
+    verify: "孤儿 task_id 返回 400；真实 task_id 返回 201；BBS 留言 ack 返回 400 且 acked_at 仍为 NULL；无 task_id 的 notice 可正常 ack"
+
+  - action: "补 ack_message 的 3 条单元测试，并对 B7/B8/B9 三个变异体做注入复验"
+    verify: "注入后测试转红（全部杀死）"
+
+  - action: "修复看板 body 换行归一（CRLF/CR/LF）与截断省略号"
+    verify: "构造含 CRLF 与超长 body 的合成数据，渲染输出为单行且有省略号"
+
+  - action: "部署到服务器：scp fstdd_hub.py 后重启服务，跑真实服务端回归"
+    verify: "三处行为在真实服务端一致；既有 2 条 task 与 8 条留言未受影响；3 条演示留言仍未被 ack"
+
+expected_outcomes:
+  - "孤儿留言无法生成（400 task not found）"
+  - "BBS 讨论串无法被任何节点 ack（400），公共讨论不被误删"
+  - "告警类 notice 的 ack 通道不受影响"
+  - "测试数由 37 上升，全绿；ROUTES 仍 13"
+  - "既有数据零影响：2 条 task、8 条 messages 保持原状"

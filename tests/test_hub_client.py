@@ -77,6 +77,8 @@ class _FakeHub(BaseHTTPRequestHandler):
             self._send(200, {"ok": True, "status": "failed"})
         elif self.path.endswith("/heartbeat"):
             self._send(200, {"ok": True})
+        elif self.path.endswith("/ack"):
+            self._send(200, {"ok": True})
         elif self.path == "/messages":
             self._send(201, {
                 "message_id": "m1", "conversation_id": "c1",
@@ -244,6 +246,24 @@ class HubClientTest(unittest.TestCase):
         bare = HubClient(self.url)  # 未设 node_id，也未显式传 from_node_id
         with self.assertRaises(ValueError):
             bare.post_message("hi")
+
+    def test_ack_message_pins_path(self):
+        """变异体防护（QA B7）：路径曾被改成 /ack2，测试全绿 —— 零覆盖。"""
+        self.hub.ack_message("m1", node_id="node-1")
+        _, path, _ = REQUESTS[-1]
+        self.assertEqual(path, "/messages/m1/ack")
+
+    def test_ack_message_payload_is_node_id_only(self):
+        """变异体防护（QA B8）：payload 曾被漏传 node_id，测试全绿。"""
+        self.hub.ack_message("m1", node_id="node-1")
+        payload = REQUESTS[-1][2]
+        self.assertEqual(payload, {"node_id": "node-1"})
+
+    def test_ack_message_requires_node_id(self):
+        """变异体防护（QA B9）：必填校验曾被去掉，测试全绿。"""
+        bare = HubClient(self.url)
+        with self.assertRaises(ValueError):
+            bare.ack_message("m1")
 
     def test_list_messages_filters_by_task(self):
         self.hub.list_messages("node-1", task_id="t1")

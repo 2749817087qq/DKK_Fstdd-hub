@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-18-bbs-guardrails: proposals/2026-09-18-bbs-guardrails.yaml
+specs:
+  agent:
+    2026-09-18-bbs-guardrails: specs/agent/2026-09-18-bbs-guardrails.yaml
+  code:
+    2026-09-18-bbs-guardrails: specs/code/2026-09-18-bbs-guardrails.yaml
+version: '2.9'

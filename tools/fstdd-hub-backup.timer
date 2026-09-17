@@ -1,11 +1,16 @@
 [Unit]
-Description=Daily backup of FSTDD hub SQLite database
+Description=Hourly backup of FSTDD hub SQLite database
 Requires=fstdd-hub-backup.service
 
 [Timer]
-OnCalendar=daily
+# 2026-09-18 由 daily 提升到 hourly。
+# 起因：QA 发现首个最小闭环跑完后，4 份备份全部早于任务创建时间，
+# 即「闭环状态本身无保护」—— 若此刻 DB 损坏，唯一的闭环证据不可恢复。
+# RPO 由 24h 降到 1h。保留期同步由 14 天降到 3 天（见 hub_backup.sh），
+# 避免 336 份文件堆积，且 72 个恢复点对当前用量已足够。
+OnCalendar=hourly
 Persistent=true
-RandomizedDelaySec=300
+RandomizedDelaySec=60
 
 [Install]
 WantedBy=timers.target

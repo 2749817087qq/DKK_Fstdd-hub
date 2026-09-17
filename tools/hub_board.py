@@ -240,10 +240,16 @@ def render(data: dict, width: int = 78) -> str:
                 for m in tl:
                     L.append(
                         f"         - {_iso(m.get('created_at'))} "
-                        f"{str(m.get('from_node_id', '-'))} [{str(m.get('kind', '-'))}]"
+                        f"{str(m.get('from_node_id') or '-')} [{str(m.get('kind') or '-')}]"
                     )
-                    body_line = str(m.get("body", "")).replace(chr(10), " ")
-                    L.append("           " + body_line[:68])
+                    raw = str(m.get("body") or "")
+                    # Windows 上多行留言天然带 CRLF，只替换 LF 会残留 CR 把版面打断。
+                    # 这里用 chr() 构造而非字面转义，避免跨层转义被吃掉。
+                    CR, LF = chr(13), chr(10)
+                    body_line = raw.replace(CR + LF, " ").replace(CR, " ").replace(LF, " ")
+                    if len(body_line) > 68:
+                        body_line = body_line[:67] + "..."
+                    L.append("           " + body_line)
             else:
                 L.append("      留言 (0)   （暂无留言）")
 

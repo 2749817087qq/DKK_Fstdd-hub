@@ -198,6 +198,82 @@ def test_failure_and_blocker_message_ack(hub):
     assert call(hub, "GET", "/messages?node_id=FSTDD005&task_id=" + task_id)[1]["messages"] == []
 
 
+def test_db_connection_enables_foreign_keys(tmp_path):
+    """PRAGMA foreign_keys 是**连接级**、默认 OFF。
+
+    SCHEMA 里声明的 FOREIGN KEY 若连接不开启就形同虚设 —— 此前正是如此：
+    声明写在 SCHEMA 常量里，connect_db 从未设置。这条断言让该 pragma 变得
+    可观测（否则即便去掉它，上层显式校验也会兜住，测试不会转红）。
+    """
+    db = tmp_path / "fk.sqlite3"
+    fstdd_hub.init_db(db)
+    conn = fstdd_hub.connect_db(db)
+    try:
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_orphan_task_message_is_rejected(hub):
+    """孤儿留言会静默丢失：task_id 打错一个字，留言在任何任务下都看不到。
+
+    messages.task_id 的外键此前从未生效（PRAGMA foreign_keys 是连接级、默认 OFF，
+    只写在 SCHEMA 常量里），实测 POST 不存在的 task_id 会返回 201。
+    """
+    register(hub)
+    status, body = call(hub, "POST", "/messages", {
+        "idempotency_key": "orphan-1", "task_id": "task-DOES-NOT-EXIST",
+        "from_node_id": "FSTDD005", "kind": "status", "body": "where am I",
+    })
+    assert status == 400
+    assert "task not found" in body["error"]
+
+
+def test_task_discussion_can_only_be_acked_by_its_author(hub):
+    """非作者 ack 任务讨论串 = 删帖：ack 后该留言对所有人的 GET 消失。
+
+    不能一刀切禁止 ack：既有的 blocker 工作流是「自己发求助 -> 自己 ack 表示已处理」，
+    数据形态与讨论串完全相同（task_id 非空 + to_node_id 空），无法区分。
+    故收窄为「仅作者可 ack」。
+    """
+    register(hub, "AUTHOR")
+    register(hub, "OTHER")
+    _, created = call(hub, "POST", "/tasks", task_payload("t-ack"))
+    task_id = created["task_id"]
+    _, posted = call(hub, "POST", "/messages", {
+        "idempotency_key": "disc-1", "task_id": task_id,
+        "from_node_id": "AUTHOR", "kind": "question", "body": "why blocked?",
+    })
+    mid = posted["message_id"]
+
+    # 非作者 ack -> 被拒，且留言对所有人仍然可见
+    status, body = call(hub, "POST", f"/messages/{mid}/ack", {"node_id": "OTHER"})
+    assert status == 400
+    assert "author" in body["error"]
+    left = call(hub, "GET", f"/messages?node_id=OTHER&task_id={task_id}")[1]["messages"]
+    assert len(left) == 1
+
+    # 作者本人 ack -> 200，留言消失（作者删自己的留言）
+    status, _ = call(hub, "POST", f"/messages/{mid}/ack", {"node_id": "AUTHOR"})
+    assert status == 200
+    assert call(hub, "GET", f"/messages?node_id=AUTHOR&task_id={task_id}")[1]["messages"] == []
+
+
+def test_broadcast_notice_without_task_is_still_ackable_by_anyone(hub):
+    """告警通道不受护栏影响：无 task_id 的广播 notice，任何节点都能 ack。
+
+    服务器镜像失败钩子正是走这条通道上报 + 由运维节点消费。
+    """
+    register(hub, "OPS")
+    _, posted = call(hub, "POST", "/messages", {
+        "idempotency_key": "notice-1", "from_node_id": "OPS",
+        "kind": "notice", "body": "[MIRROR-FAILED] rc=128",
+    })
+    mid = posted["message_id"]
+    status, _ = call(hub, "POST", f"/messages/{mid}/ack", {"node_id": "OPS"})
+    assert status == 200
+
+
 def test_invalid_owner_and_unregistered_node_are_rejected(hub):
     status, body = call(hub, "POST", "/nodes/heartbeat", {"node_id": "FSTDD999"})
     assert status == 400

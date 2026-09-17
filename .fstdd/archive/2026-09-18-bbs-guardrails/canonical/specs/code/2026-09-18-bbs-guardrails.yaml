@@ -1,0 +1,68 @@
+# spec.yaml — 行为规格（Canonical YAML）
+
+meta:
+  capability: "留言板数据面护栏"
+  change_id: "2026-09-18-bbs-guardrails"
+  created: "2026-09-17T18:18:42+00:00"
+  confidence: high
+
+requirements:
+  - id: "REQ-001"
+    description: "messages.task_id 外键必须真正生效，禁止生成孤儿留言"
+    scenarios:
+      - id: "SC-001"
+        given: "中枢运行中，connect_db 建立的连接"
+        when: "POST /messages 携带不存在的 task_id"
+        then: "服务端 SHALL 返回 400 task not found，且不写入任何行"
+      - id: "SC-002"
+        given: "中枢运行中"
+        when: "POST /messages 携带真实存在的 task_id"
+        then: "服务端 SHALL 返回 201，行为与改动前一致"
+
+  - id: "REQ-002"
+    description: "任务讨论串只能由作者 ack（把删帖权限从『任一注册节点』收窄到『仅作者』）"
+    scenarios:
+      - id: "SC-003"
+        given: "存在一条 task_id 非空且 to_node_id 为空、作者为 A 的留言"
+        when: "非作者 B POST /messages/{id}/ack"
+        then: "服务端 SHALL 返回 400，且该留言 acked_at 保持 NULL、对所有人仍可见"
+      - id: "SC-003b"
+        given: "同上一条留言"
+        when: "作者 A 本人 POST /messages/{id}/ack"
+        then: "服务端 SHALL 返回 200 —— 既有 blocker 工作流依赖此路径（自己发求助、自己 ack 表示已处理），其数据形态与讨论串完全相同（task_id 非空 + to_node_id 空），无法区分，故只能收窄不能禁止"
+      - id: "SC-004"
+        given: "存在一条 task_id 为空的告警类 notice"
+        when: "任一节点 POST /messages/{id}/ack"
+        then: "服务端 SHALL 返回 200，行为与改动前一致（告警通道不受影响）"
+
+  - id: "REQ-003"
+    description: "ack_message 客户端契约必须有测试覆盖"
+    scenarios:
+      - id: "SC-005"
+        given: "HubClient 已配置 node_id"
+        when: "调用 ack_message(message_id)"
+        then: "SHALL POST 到 /messages/{message_id}/ack，payload 只含 node_id"
+
+  - id: "REQ-004"
+    description: "看板留言渲染须正确处理 Windows 换行与超长文本"
+    scenarios:
+      - id: "SC-006"
+        given: "一条 body 含 CRLF 换行的留言"
+        when: "看板渲染该留言"
+        then: "输出 SHALL 为单行，不出现残留 CR 导致的版面错位"
+      - id: "SC-007"
+        given: "一条 body 长度超过 68 字符的留言"
+        when: "看板渲染该留言"
+        then: "输出 SHALL 带省略号提示被截断"
+
+  - id: "REQ-005"
+    description: "不回归：既有能力与接口数量不变"
+    scenarios:
+      - id: "SC-008"
+        given: "改动完成"
+        when: "统计 fstdd_hub.py 的路由分支数"
+        then: "SHALL 仍为 13（本 change 只加校验、不加端点）"
+      - id: "SC-009"
+        given: "改动完成"
+        when: "运行 pytest tests/"
+        then: "既有 37 条用例 SHALL 全部通过，新增用例亦通过"

@@ -118,6 +118,11 @@ def connect_db(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), timeout=10, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=10000")
+    # SQLite 的 foreign_keys 是**连接级** pragma、默认 OFF。
+    # SCHEMA 里声明的 FOREIGN KEY 此前形同虚设（只写在 SCHEMA 常量里，连接从未开启），
+    # 实测：POST /messages 带不存在的 task_id 会返回 201 生成孤儿留言。
+    # isolation_level=None 处于事务外，此处执行有效。
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
@@ -506,8 +511,14 @@ class HubHandler(BaseHTTPRequestHandler):
         to_node = payload.get("to_node_id")
         if to_node and not conn.execute("SELECT 1 FROM nodes WHERE node_id=?", (to_node,)).fetchone():
             raise ValueError("to_node_id not registered")
+        task_id = payload.get("task_id")
+        if task_id and not conn.execute("SELECT 1 FROM tasks WHERE task_id=?", (task_id,)).fetchone():
+            # 外键虽已开启，但这里给一条明确的错误信息，而不是让调用方去猜
+            # "FOREIGN KEY constraint failed"。孤儿留言在任何任务下都看不到，
+            # 静默接受等于留言凭空消失。
+            raise ValueError("task not found")
         body = {"message_id": new_id("msg"), "conversation_id": payload.get("conversation_id") or new_id("conv"),
-                "task_id": payload.get("task_id"), "from_node_id": from_node, "to_node_id": to_node,
+                "task_id": task_id, "from_node_id": from_node, "to_node_id": to_node,
                 "kind": kind, "body": require_text(payload, "body", 10000), "created_at": utc_now()}
         conn.execute("""INSERT INTO messages(message_id,conversation_id,task_id,from_node_id,to_node_id,
                      kind,body,idempotency_key,request_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
@@ -523,6 +534,16 @@ class HubHandler(BaseHTTPRequestHandler):
             raise ValueError("message not found")
         if row["to_node_id"] and row["to_node_id"] != node_id:
             raise ValueError("message is addressed to another node")
+        if row["task_id"] and not row["to_node_id"] and row["from_node_id"] != node_id:
+            # 任务讨论串（留言板语义）：to_node_id 为空 = 所有人可见，而 ack 会让它
+            # 在所有人的 GET 结果里消失（服务端过滤 acked_at IS NULL）—— 等同删帖。
+            # 原先任何已注册节点都能删任何人的讨论，唯一的防线只是 docstring 一句话。
+            #
+            # 注意不能一刀切禁止：既有的 blocker 工作流正是「自己发求助 -> 自己 ack 表示已处理」
+            # （tests/test_fstdd_hub.py::test_failure_and_blocker_message_ack），
+            # 其数据形态与 BBS 讨论串完全相同（task_id 非空 + to_node_id 空），无法区分。
+            # 因此收窄为「仅作者可 ack」—— 作者删自己的留言合理，别人删则不允许。
+            raise ValueError("only the author can ack a task discussion message")
         conn.execute("UPDATE messages SET acked_at=? WHERE message_id=?", (utc_now(), message_id))
         self._json(200, {"ok": True, "message_id": message_id})
 
