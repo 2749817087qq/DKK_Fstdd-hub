@@ -77,6 +77,15 @@ class _FakeHub(BaseHTTPRequestHandler):
             self._send(200, {"ok": True, "status": "failed"})
         elif self.path.endswith("/heartbeat"):
             self._send(200, {"ok": True})
+        elif self.path == "/messages":
+            self._send(201, {
+                "message_id": "m1", "conversation_id": "c1",
+                "task_id": payload.get("task_id"),
+                "from_node_id": payload["from_node_id"],
+                "to_node_id": payload.get("to_node_id"),
+                "kind": payload["kind"], "body": payload["body"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+            })
         else:
             self._send(404, {"error": "not found"})
 
@@ -206,6 +215,47 @@ class HubClientTest(unittest.TestCase):
         self.hub.fail("t1", "tok", "node-1", "waiting on review", status="blocked")
         self.assertEqual(REQUESTS[-1][2]["status"], "blocked")
         self.assertEqual(REQUESTS[-1][2]["summary"], "waiting on review")
+
+    # ------------------------------------------------------------ 留言（BBS）
+
+    def test_post_message_pins_task_id(self):
+        self.hub.post_message("为什么卡住了？", kind="question", task_id="t1",
+                              from_node_id="node-1", idempotency_key="msg-1")
+        _, path, payload = REQUESTS[-1]
+        self.assertEqual(path, "/messages")
+        self.assertEqual(payload["task_id"], "t1")
+        self.assertEqual(payload["body"], "为什么卡住了？")
+        self.assertEqual(payload["kind"], "question")
+        self.assertEqual(payload["from_node_id"], "node-1")
+        self.assertEqual(payload["idempotency_key"], "msg-1")
+
+    def test_post_message_is_broadcast_not_dm(self):
+        """变异体防护：一旦带上 to_node_id，留言就只有收件人可见，留言板退化成私信。"""
+        self.hub.post_message("hi", from_node_id="node-1")
+        payload = REQUESTS[-1][2]
+        self.assertNotIn("to_node_id", payload)
+
+    def test_post_message_rejects_unknown_kind(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.hub.post_message("hi", kind="chat", from_node_id="node-1")
+        self.assertIn("question", str(ctx.exception))
+
+    def test_post_message_requires_sender(self):
+        bare = HubClient(self.url)  # 未设 node_id，也未显式传 from_node_id
+        with self.assertRaises(ValueError):
+            bare.post_message("hi")
+
+    def test_list_messages_filters_by_task(self):
+        self.hub.list_messages("node-1", task_id="t1")
+        path = REQUESTS[-1][1]
+        self.assertIn("node_id=node-1", path)
+        self.assertIn("&task_id=t1", path)
+
+    def test_list_messages_without_task_has_no_filter(self):
+        self.hub.list_messages("node-1")
+        path = REQUESTS[-1][1]
+        self.assertIn("node_id=node-1", path)
+        self.assertNotIn("task_id", path)
 
     # ------------------------------------------------------------ CLI
 

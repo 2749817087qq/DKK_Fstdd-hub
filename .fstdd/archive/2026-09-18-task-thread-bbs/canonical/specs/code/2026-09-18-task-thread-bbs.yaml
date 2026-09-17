@@ -1,0 +1,64 @@
+# spec.yaml — 行为规格（Canonical YAML）
+
+meta:
+  capability: "任务留言线程（task-thread-bbs）"
+  change_id: "2026-09-18-task-thread-bbs"
+  created: "2026-09-17T17:45:45+00:00"
+  confidence: medium
+
+requirements:
+  - id: "REQ-001"
+    description: "发留言：向指定任务发布一条公开留言"
+    scenarios:
+      - id: "SC-001"
+        given: "中枢可达，且 from_node_id 已注册"
+        when: "调用 post_message(task_id, body, kind='question')"
+        then: "SHALL 向 POST /messages 提交 payload，其中 task_id、body、kind、idempotency_key 均正确透传，且 from_node_id 为调用方身份"
+
+  - id: "REQ-002"
+    description: "BBS 语义：留言必须对所有人可见，不得退化成私信"
+    scenarios:
+      - id: "SC-002"
+        given: "调用 post_message"
+        when: "payload 被序列化"
+        then: "SHALL 不包含 to_node_id 键（或为 null）—— 因为服务端过滤条件是 to_node_id=? OR to_node_id IS NULL，一旦指定收件人则仅该节点可见"
+
+  - id: "REQ-003"
+    description: "kind 白名单：只允许中枢定义的四种消息类型"
+    scenarios:
+      - id: "SC-003"
+        given: "调用 post_message 传入非法 kind（如 'chat'）"
+        when: "客户端校验"
+        then: "SHALL 在发出请求前抛出 ValueError，错误信息列出合法取值 question/blocker/status/notice"
+
+  - id: "REQ-004"
+    description: "取留言：按任务过滤，只返回该任务的讨论"
+    scenarios:
+      - id: "SC-004"
+        given: "任务 T 有 2 条留言，任务 U 有 1 条留言"
+        when: "调用 list_messages(node_id, task_id=T)"
+        then: "SHALL 请求 GET /messages?node_id=X&task_id=T，且返回结果仅含 T 的 2 条，不含 U 的留言"
+
+  - id: "REQ-005"
+    description: "看板渲染：每个任务下方跟随其留言线程"
+    scenarios:
+      - id: "SC-005"
+        given: "看板已拉取任务列表与各任务的留言"
+        when: "渲染任务区"
+        then: "SHALL 在每个任务条目下方输出其留言线程（扁平、按 created_at 升序），逐条显示 发言者、kind、相对时间、正文；无留言时显示「（暂无留言）」占位"
+
+  - id: "REQ-006"
+    description: "ack 禁忌：BBS 留言不得被 ack，否则会因服务端 acked_at IS NULL 过滤而对所有人消失"
+    scenarios:
+      - id: "SC-006"
+        given: "任务下存在留言"
+        when: "任何 BBS 流程执行"
+        then: "SHALL NOT 调用 ack_message()；ack_message 的存在仅为告警类消息保留，其文档字符串 SHALL 明确写出此禁忌"
+
+  - id: "REQ-007"
+    description: "不回归：既有能力不受影响"
+    scenarios:
+      - id: "SC-007"
+        given: "改动前 tests/ 为 31 passed"
+        when: "本 change 完成后运行 pytest tests/"
+        then: "SHALL 全部通过，且数量不少于 31（新增用例计入）"

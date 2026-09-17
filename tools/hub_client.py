@@ -113,6 +113,73 @@ class HubClient:
         """/messages 必须带 node_id 查询参数，裸请求会被拒。"""
         return self.get(f"/messages?node_id={node_id}")["messages"]
 
+    # ------------------------------------------------------------------ 留言
+
+    # 中枢定义的消息类型（fstdd_hub.py:31）。BBS 讨论主要用前三种。
+    MESSAGE_KINDS = ("question", "blocker", "status", "notice")
+
+    def list_messages(self, node_id: str, task_id: str | None = None) -> list[dict]:
+        """取留言。`node_id` 必填（服务端强制要求），`task_id` 用于只看某任务的讨论。
+
+        ⚠️ 服务端 SQL 含 `WHERE acked_at IS NULL` —— **被 ack 的消息不会出现在结果里**。
+        所以留言板上的留言绝不能 ack，否则讨论串会凭空消失。
+        """
+        path = f"/messages?node_id={node_id}"
+        if task_id:
+            path += f"&task_id={task_id}"
+        return self.get(path)["messages"]
+
+    def post_message(
+        self,
+        body: str,
+        kind: str = "status",
+        from_node_id: str | None = None,
+        task_id: str | None = None,
+        conversation_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict:
+        """发一条**公开**留言（留言板语义，所有人可见）。
+
+        刻意**不提供 `to_node_id` 参数**：服务端过滤条件是
+        `to_node_id=? OR to_node_id IS NULL`，一旦指定收件人，这条留言就只有
+        收件人能看到，留言板会退化成私信。要私信请另开接口，不要走这里。
+
+        ⚠️ 发完**不要 ack** —— ack 之后该留言会对所有人消失（见 list_messages 说明）。
+
+        `kind` 取值：question（提问）/ blocker（阻塞）/ status（状态同步）/ notice（通告）。
+        """
+        if kind not in self.MESSAGE_KINDS:
+            raise ValueError(
+                f"invalid message kind {kind!r}, must be one of {self.MESSAGE_KINDS}"
+            )
+        node = from_node_id or self.node_id
+        if not node:
+            raise ValueError(
+                "from_node_id is required (pass it explicitly or set HubClient.node_id)"
+            )
+        payload: dict[str, Any] = {
+            "idempotency_key": idempotency_key or f"msg-{secrets.token_hex(8)}",
+            "from_node_id": node,
+            "kind": kind,
+            "body": body,
+        }
+        if task_id:
+            payload["task_id"] = task_id
+        if conversation_id:
+            payload["conversation_id"] = conversation_id
+        return self._post("/messages", payload)
+
+    def ack_message(self, message_id: str, node_id: str | None = None) -> dict:
+        """确认一条消息。
+
+        ⚠️ **仅供告警类消息使用**（如镜像失败 notice）。
+        留言板上的讨论**绝不可 ack** —— ack 后它会对所有人消失，讨论串就断了。
+        """
+        node = node_id or self.node_id
+        if not node:
+            raise ValueError("node_id is required (pass it or set HubClient.node_id)")
+        return self._post(f"/messages/{message_id}/ack", {"node_id": node})
+
     # ------------------------------------------------------------------ 节点
 
     def register(

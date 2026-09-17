@@ -186,6 +186,27 @@ def render(data: dict, width: int = 78) -> str:
             if caps:
                 L.append(f"      能力: {', '.join(map(str, caps))}")
 
+    # 汇总全部消息（各节点 /messages 去重后合并）
+    msgs: list[dict] = []
+    seen: set[str] = set()
+    for key, val in data.items():
+        if key.startswith("/messages?"):
+            for m in (val.get("messages") or []):
+                mid = str(m.get("message_id"))
+                if mid not in seen:
+                    seen.add(mid)
+                    msgs.append(m)
+    msgs.sort(key=lambda m: str(m.get("created_at") or ""))
+
+    # 按任务归集留言 -> BBS 线程
+    # 注意：服务端过滤含 acked_at IS NULL，被 ack 的消息不会出现在这里。
+    #       因此留言板上的讨论**绝不可 ack**，否则讨论串会凭空消失。
+    thread: dict[str, list[dict]] = {}
+    for m in msgs:
+        mtid = m.get("task_id")
+        if mtid:
+            thread.setdefault(str(mtid), []).append(m)
+
     for name, grp in STATUS_GROUPS:
         rows = [t for t in tasks if t.get("status") in grp]
         L.append("")
@@ -212,16 +233,19 @@ def render(data: dict, width: int = 78) -> str:
                 except (ValueError, AttributeError):
                     L.append(f"      失败: {str(t.get('failure_json'))[:60]}")
 
-    msgs: list[dict] = []
-    seen: set[str] = set()
-    for key, val in data.items():
-        if key.startswith("/messages?"):
-            for m in (val.get("messages") or []):
-                mid = str(m.get("message_id"))
-                if mid not in seen:
-                    seen.add(mid)
-                    msgs.append(m)
-    msgs.sort(key=lambda m: str(m.get("created_at") or ""))
+            # 任务留言线程（BBS）
+            tl = thread.get(tid, [])
+            if tl:
+                L.append(f"      留言 ({len(tl)})")
+                for m in tl:
+                    L.append(
+                        f"         - {_iso(m.get('created_at'))} "
+                        f"{str(m.get('from_node_id', '-'))} [{str(m.get('kind', '-'))}]"
+                    )
+                    body_line = str(m.get("body", "")).replace(chr(10), " ")
+                    L.append("           " + body_line[:68])
+            else:
+                L.append("      留言 (0)   （暂无留言）")
 
     L.append("")
     L.append(f" 消息 ({len(msgs)})")

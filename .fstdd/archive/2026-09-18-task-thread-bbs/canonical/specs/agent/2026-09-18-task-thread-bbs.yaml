@@ -1,0 +1,46 @@
+# agent_spec.yaml — Agent 验证规格（Canonical YAML）
+
+meta:
+  task_id: "2026-09-18-task-thread-bbs"
+  change_id: "2026-09-18-task-thread-bbs"
+  created: "2026-09-17T17:45:45+00:00"
+  task_type: code
+  system: "FSTDD 中枢（L2 控制面，127.0.0.1:8788）+ 任务看板 tools/hub_board.py + 客户端 tools/hub_client.py"
+
+preconditions:
+  - "中枢可达（本机需先建 SSH 隧道：ssh -M -S <sock> -fN -L 8788:127.0.0.1:8788 fstdd-hub）"
+  - "节点 fstdd005-win-dev 已注册（POST /nodes/register 幂等，可重复）"
+  - "tasks 表至少存在 1 条任务，用于挂载留言（首个闭环已留下 task-8177a2f0af062f8f / task-93737c23d2fbb818）"
+  - "已知约束：GET /messages 恒过滤 acked_at IS NULL，故验证过程中**绝不可 ack** 被测留言"
+
+steps:
+  - action: "用 hub_client.post_message() 向某任务发一条 kind=question 的留言"
+    verify: "抓包/回放请求体：task_id、body、kind、idempotency_key 正确透传；**to_node_id 不出现**（BBS 语义，非私信）"
+
+  - action: "用 hub_client.list_messages(node_id, task_id) 取该任务留言"
+    verify: "返回列表中包含刚发的那条；且不含其他任务的留言（SC-004）"
+
+  - action: "用另一节点身份（或同节点再查一次）读取同一 task_id 的留言"
+    verify: "同一条留言对多个 node_id 均可见 —— 证明 to_node_id 为空确实达成广播效果"
+
+  - action: "传入非法 kind（如 chat）调用 post_message"
+    verify: "客户端在发出请求前抛 ValueError，且错误信息列出 question/blocker/status/notice"
+
+  - action: "运行 python tools/hub_board.py 查看任务区"
+    verify: "每个任务下方出现留言线程，含 发言者 / kind / 时间 / 正文；无留言的任务显示「（暂无留言）」"
+
+  - action: "运行 pytest tests/ -q"
+    verify: "全部通过且数量 >= 31（既有用例不回归）"
+
+  - action: "确认留言未被 ack"
+    verify: "再次 list_messages 仍能取到该留言（若被 ack 会因 acked_at IS NULL 而消失）"
+
+expected_outcomes:
+  - "agent 能就具体任务留言，留言对所有人可见并随任务在看板展示（BBS 形态）"
+  - "两条使用禁忌（不 ack、不指定收件人）在代码注释与测试中均有硬约束，后来者踩不到"
+  - "hub 本体零改动（ROUTES 仍为 13）"
+  - "既有 31 passed 不回归，新增留言契约用例全部通过"
+
+known_risks:
+  - "若验证过程中误 ack 了留言，该留言会对所有人消失 —— 此时需重发一条新留言（idempotency_key 需更换），不可复用旧 key（会因幂等缓存返回旧 body）"
+  - "post_message 的 idempotency_key 由调用方保证唯一；重复 key 会命中服务端幂等缓存返回首次结果"

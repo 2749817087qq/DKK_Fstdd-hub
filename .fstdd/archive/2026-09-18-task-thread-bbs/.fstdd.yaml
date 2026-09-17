@@ -1,0 +1,50 @@
+baseline:
+  at: '2026-09-17T17:48:04+00:00'
+  base_git_sha: eace61248df862dbec27641ca8eb07d6a8dd5df4
+  clock_source: system
+  established_by: gate1
+  node_id: DESKTOP-1MEQDMR
+change_id: 2026-09-18-task-thread-bbs
+complexity_score: null
+current_phase: deliver
+design_adjustments:
+  count: 0
+last_modified: '2026-09-17T17:54:12+00:00'
+mode: standard
+phases:
+  build:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T17:54:10+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：完整做立 change + 扁平列表。7 REQ / 6 SC 全通过，真实中枢验证 3 条留言广播可见，看板渲染正常，测试
+      31→37 passed，hub 本体零改动
+    slices_completed:
+      A:
+        new_tests: 6
+        tc_coverage: SC-001,SC-002,SC-003,SC-004,SC-005,SC-006,REQ-006
+        verified_at: '2026-09-18T03:15:00+08:00'
+    status: completed
+  deliver:
+    status: in_progress
+  spec:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T17:48:19+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: SPEC 就绪：7 条 REQ / 7 条 SC，含 BBS 语义约束（to_node_id 恒空）、kind 白名单、ack
+      禁忌、不回归要求。
+    status: completed
+  understand:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T17:48:04+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: D哥（02:40）：选『完整做：立 change 走 FSTDD』+『扁平列表』。需求：看板每个任务后加留言，AI
+      可留言讨论。实测确认 hub 本体无需改动（messages 表已有 task_id/kind/task_id 过滤）。
+    status: completed
+score_confidence: null
+status: archived
+task_type: code
+traceability:
+  spec_scenarios: 0
+  tc_cases: 0
+  test_functions: 0
+version: '3.0'

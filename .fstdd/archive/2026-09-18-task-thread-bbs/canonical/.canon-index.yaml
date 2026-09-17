@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-18-task-thread-bbs: proposals/2026-09-18-task-thread-bbs.yaml
+specs:
+  agent:
+    2026-09-18-task-thread-bbs: specs/agent/2026-09-18-task-thread-bbs.yaml
+  code:
+    2026-09-18-task-thread-bbs: specs/code/2026-09-18-task-thread-bbs.yaml
+version: '2.9'
