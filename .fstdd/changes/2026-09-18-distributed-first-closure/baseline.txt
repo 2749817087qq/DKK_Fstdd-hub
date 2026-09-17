@@ -1,0 +1,47 @@
+# P0 基线冻结 — 2026-09-18-distributed-first-closure
+# 用途：P5 收尾时逐项比对，判断本轮是否夹带了非预期改动
+
+## 时间盒
+T_START (墙钟) : 2026-09-18 00:33:53 +08:00
+T_START (epoch): 1789662833
+时间盒        : 120 min  → 硬截止 2026-09-18 02:33:53
+检查点        : T+60 (01:33) / T+90 (02:03) / T+120 (02:33)
+
+## [K5] T0 手动预估 —— D哥 本人填写（禁止 agent 代写）
+manual_estimate_min  : 60
+manual_estimate_steps: 6     # D哥 选「5-7 步」，取中值 6
+K5 判据              : 实际耗时 <= 90 min (= 60 x 1.5) 才算「明显优于手动」
+填写时刻            : 2026-09-18 00:31 (P1 之前，满足硬截止点)
+
+## 仓库选择（产品官 Q1 拍板 = 方案 C）
+主战场: D:/tools/FSTDD/fstdd-hub
+理由  : 验证目标是「控制面从未接过任务」(tasks=0)，而非重复验证昨天已验过的
+        push/镜像能力；fstdd-hub 0 冲突 / 0 在途，P0-P5 差集比对可用。
+
+## 本地基线 (D:/tools/FSTDD/fstdd-hub)
+BASE_SHA       : f2bf26c
+WORKTREES      : 1
+DIRTY (P0 时刻): 1  -> 仅新建 change 目录
+                 .fstdd/changes/2026-09-18-distributed-first-closure/ (未跟踪)
+ROUTES         : 13   # tools/fstdd_hub.py 路由分支总数 = GET 4 + POST 9
+                      # 注：不能用 `grep -c 'self.path =='` 计数，该文件混用
+                      #     startswith/endswith，会少计
+ACTIVE_CHANGES : 1    # 即本 change
+CODE_DIFF_BASE : 以 f2bf26c 为基线（本轮全新增量）
+TESTS          : tests/ → 14 passed（P0 与 P5 各跑一次）
+                 upstream/tests 属 stdd-repo 框架，不纳入本轮回归
+
+## 服务端基线 (43.134.236.80)
+health     : {"ok": true, "tasks": 0, "online_nodes": 1}
+nodes      : 1 条 —— fstdd-hub-infra (linux/ubuntu, capability: mirror-monitor)
+tasks      : []
+idempotency: 2
+mirror.log 尾行: [MIRROR-OK] mirror complete: branches + tags up to date
+
+## 关键决策留痕
+Q3 PATCH /tasks/{id} : 不需要。已有 POST /tasks/{id}/complete + /fail，
+                       且约束强于 PATCH（要 lease_token + idempotency_key +
+                       result_git_sha）。代码增量 0 行。
+P4b 数据面           : D哥 00:31 拍板「做完整版」—— 新建 GitHub 仓库
+                       + 服务器裸库 + 镜像钩子。故 P4b 为必做项，
+                       且 K1/K4 正常生效（不降级）。

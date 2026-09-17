@@ -9,15 +9,21 @@
 #     若此处返回非零，会制造「报失败但其实成功」的混乱，并诱导使用者改用
 #     --force 重推。失败只通过日志与 [MIRROR-FAIL] 标记表达。
 #   * 用 --mirror 同步所有 refs（分支 + tag），不用逐个 refspec。
-#   * 服务器默认 SSH key 属 2749817087qq 账号级 key，对该账号下仓库天然有写权限，
-#     因此不需要额外配 deploy key。
+#   * ⚠️ 必须用 ssh 别名 github-fstdd-hub，不能写 git@github.com。
+#     服务器 ~/.ssh/config 里 Host github.com 绑定的是 DKK_Fstdd 的**专属 deploy key**
+#     （GitHub 限制一个 deploy key 只能绑一个仓库），用它推本仓库会得到
+#     "Permission to ... denied to deploy key"。
+#     github-fstdd-hub 指向专用 key fstdd_hub_mirror_ed25519，其公钥已作为
+#     本仓库的 deploy key（id 163628534, read_only=false）注册。
+#     判断依据：`ssh -T git@github.com` 返回 "Hi <owner>/<repo>!" 是 deploy key 格式，
+#     返回 "Hi <username>!" 才是账号级 key。
 
 set -uo pipefail
 export HOME=/home/ubuntu
 unset GIT_DIR GIT_WORK_TREE
 
 LOG=/home/ubuntu/fstdd-git/fstdd-hub-mirror.log
-TARGET=git@github.com:2749817087qq/DKK_Fstdd-hub.git
+TARGET=git@github-fstdd-hub:2749817087qq/DKK_Fstdd-hub.git
 
 {
   echo "--- $(date -Iseconds) post-receive: mirroring to github ---"

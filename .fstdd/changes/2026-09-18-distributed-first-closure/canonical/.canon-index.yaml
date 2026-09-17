@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-18-distributed-first-closure: proposals/2026-09-18-distributed-first-closure.yaml
+specs:
+  agent:
+    2026-09-18-distributed-first-closure: specs/agent/2026-09-18-distributed-first-closure.yaml
+  code:
+    2026-09-18-distributed-first-closure: specs/code/2026-09-18-distributed-first-closure.yaml
+version: '2.9'

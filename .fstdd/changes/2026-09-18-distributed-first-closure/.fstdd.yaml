@@ -1,0 +1,34 @@
+change_id: 2026-09-18-distributed-first-closure
+complexity_score: null
+current_phase: build
+design_adjustments:
+  count: 0
+last_modified: '2026-09-18T00:36:10.578295'
+mode: standard
+phases:
+  build:
+    status: in_progress
+  deliver:
+    status: pending
+  spec:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-18T00:36:10'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：开 —— SPEC 阶段 P0-P5 七步操作步骤 + 5 条 Kill Criteria + 4 场景回滚预案已就绪，P4b
+      按 D哥 拍板做完整版
+    status: completed
+  understand:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-18T00:35:11'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：开（00:29）+ 拍板 P4b 做完整版（新建 GitHub 仓库+镜像，00:31）+ T0 手动预估 60
+      分钟 / 6 步（00:31）。Q1 主战场 fstdd-hub 经产品官评审确认，P0 CLI canonical 探测通过。
+    status: completed
+score_confidence: null
+status: active
+task_type: configuration
+traceability:
+  spec_scenarios: 0
+  tc_cases: 0
+  test_functions: 0
+version: '3.0'

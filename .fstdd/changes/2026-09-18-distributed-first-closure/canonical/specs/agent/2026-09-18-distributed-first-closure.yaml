@@ -1,0 +1,58 @@
+# agent_spec.yaml — Agent 验证规格（Canonical YAML）
+
+meta:
+  task_id: "2026-09-18-distributed-first-closure"
+  change_id: "2026-09-18-distributed-first-closure"
+  created: "2026-09-18T00:29:39.632715"
+  task_type: configuration
+  system: "FSTDD 多机多 agent 协作系统（L1 数据面 / L2 控制面 / L3 节点本地），主战场 D:/tools/FSTDD/fstdd-hub"
+
+preconditions:
+  - "服务器 43.134.236.80 上 fstdd-hub.service 为 active+enabled，/health 返回 ok"
+  - "/nodes 仅 1 条 fstdd-hub-infra；/tasks 为空数组"
+  - "本地 D:/tools/FSTDD/fstdd-hub 工作区干净（P0 时 DIRTY=1，仅为新建 change 目录）"
+  - "SSH 别名 fstdd-hub 可用（写裸主机名会绕过 ssh config 的 IdentityFile）"
+  - "T0 手动预估已由 D哥 本人填写：60 分钟 / 6 步（K5 唯一数据源，P1 之前必须就位）"
+  - "P0 CLI/canonical 探测通过：CLI 在 fstdd-hub cwd 下能解析 .fstdd/canonical/"
+
+steps:
+  - action: "P0 基线冻结：生成 baseline.txt，记录 BASE_SHA / WORKTREES / ROUTES / ACTIVE_CHANGES / 服务端状态 / T0 预估"
+    verify: "cat baseline.txt 各项非空；ROUTES==13；WORKTREES==1；T0 已填且非 PLACEHOLDER"
+
+  - action: "P1 建 SSH 隧道（本地 8788 → 服务器 127.0.0.1:8788）并注册本节点"
+    verify: "curl -s localhost:8788/nodes | grep -c <node_id> == 1；**同一 register 命令连跑两次后计数仍 == 1**（SSH 双执行坑，只看回显会误判）"
+
+  - action: "P2 经中枢 POST /tasks 创建 1 条真实任务，再 POST /tasks/claim 原子领取"
+    verify: "/tasks 中该 task 同时含 claimed_by=<node_id> 与 lease_token；重复 claim 第二次返回空/非 200 且不改 claimed_by"
+
+  - action: "P3 为该任务建 git worktree，做一次真实改动，提交并推送 task/<id> 分支"
+    verify: "git -C <wt> status --porcelain 提交后为空；git ls-remote <remote> task/<id> 存在且 sha == git -C <wt> rev-parse HEAD"
+
+  - action: "P4a 本地 ff-only 集成：切回 master 合并 task 分支，master 前进 1 commit"
+    verify: "git rev-parse --short master 与 P4a 前的 task 分支 sha 一致；git log --oneline -1 为新提交"
+
+  - action: "P4b（D哥 拍板做完整版）新建 GitHub 仓库 + 服务器裸库 + 镜像钩子，推送并验证三端收敛"
+    verify: "git ls-remote <server> master == git ls-remote <github> master == 本地 HEAD；tail mirror.log 新增行全 [OK] 且无 WARN/ERROR"
+
+  - action: "P5 POST /tasks/{id}/complete 带 result_git_sha 与 idempotency_key 标记终态，清理 worktree，收尾复核"
+    verify: "/tasks 中该 task 状态为终态且 result_ref 落库；git worktree list == 1 行；cd fstdd-hub && pytest tests -q == 14 passed"
+
+expected_outcomes:
+  - "register → task → claim → complete 全链路在真实环境（不 mock）跑通一次"
+  - "tasks 表从 0 变为 1，且该 task 有完整生命周期留痕（claimed_by / lease_token / result_git_sha）"
+  - "fstdd-hub 从零 remote 变为具备完整数据面（服务器裸库 + GitHub 镜像）"
+  - "实际耗时可测，能与 T0=60min 对比得出 K5 结论"
+  - "产出「决策门三问」的诚实答案，任一为否则冻结平台化投入"
+
+kill_criteria:
+  - "K1 墙钟 > 120 min → 立即冻结"
+  - "K2 累计排查 > 30 min → 降级为纯数据面验证"
+  - "K3 代码增量或接口数超出 P0 基线 → 停止并复盘"
+  - "K4 P4b 每步前后 sha 不一致或 mirror.log 出现 WARN/ERROR → 立即停止一切写操作"
+  - "K5 实际耗时 > 90 min（60 x 1.5）→ 判定「不明显优于手动」"
+
+rollback:
+  - "worktree 残留: git worktree remove --force <wt> && git worktree prune → list 回 1 行"
+  - "task 分支残留: 确认未被 master 引用后 git branch -D task/<id> 并删远端分支"
+  - "SQLite 脏数据: systemctl stop fstdd-hub → 用 hub_backup.sh 最近备份整库回滚 → 启服务"
+  - "镜像失败: 立即停止一切写操作，比对两端 sha，重推一次触发 post-receive；仍失败则本轮判停"
