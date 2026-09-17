@@ -1,0 +1,49 @@
+# Canonical Proposal (YAML-first, V2.9)
+
+meta:
+  change_id: "2026-09-18-node-register-column-fix"
+  title: "节点注册 SQL 列错位：指纹被写成 online，新节点不计入在线数"
+  created: "2026-09-17T18:47:00+00:00"
+  status: draft
+  version: "2.9"
+
+why:
+  problem: |
+    _register 的 INSERT 语句列与占位符错位一格：列顺序是
+    (..., capabilities_json, ssh_fingerprint, status, last_seen, ...)，
+    而 VALUES 第 6 个写的是字面量 'online'。净效果是两个字段的值互换：
+      * ssh_fingerprint 列 <- 字面量 'online'（真实指纹永久丢失）
+      * status 列 <- 指纹串（首次插入时），直到第二次注册才被 ON CONFLICT 兜回 'online'
+    /health 的 online_nodes 按 status='online' 计数，因此**首次注册的节点会被漏算**。
+
+    发现路径：补验 QA 遗留盲区「hub_client.register() 从未对真实中枢跑过」时，
+    发现返回的 machine_name/platform 为 null，顺藤摸瓜查到落库值不对。
+  evidence:
+    observed_at: "2026-09-17T18:44:00+00:00"
+    observed_base_git_sha: "e082c17"
+    details: |
+      真实中枢实测（2026-09-18）：
+      - 首次注册全新节点 probe-fresh-node-01（fp=SHA256:REAL-FINGERPRINT）：
+          status='SHA256:REAL-FINGERPRINT'（期望 'online'）
+          ssh_fingerprint='online'（期望 'SHA256:REAL-FINGERPRINT'）
+      - 二次注册（走 ON CONFLICT）：status 被兜回 'online'，但 fp 仍是 'online'
+      - 生产数据：修复前两个真实节点的 ssh_fingerprint 均为 'online'
+      - fstdd_hub.py:265 `SELECT COUNT(*) FROM nodes WHERE status='online'` 用于 /health
+      - 既有 44 条测试全绿 —— 测试只断言 node_id，从不检查 status/ssh_fingerprint 的值
+
+what_changes:
+  - description: "修正 INSERT 的 VALUES 占位符：ssh_fingerprint 由字面量 'online' 改为绑定参数，status 恢复为字面量 'online'"
+  - description: "补守卫型测试：断言注册后 status=='online'、ssh_fingerprint 保留传入值、/health 的 online_nodes 计入首次注册的节点"
+  - description: "生产数据修复：清理验证探针节点，用真实 SSH 公钥指纹重新注册两个节点"
+
+capabilities:
+  new: []
+  modified:
+    - name: "节点注册"
+      description: "字段不再错位，指纹真实落库，首次注册即计入在线数"
+
+success_criteria:
+  - "新注册节点 status=='online' 且 ssh_fingerprint 等于传入值"
+  - "/health 的 online_nodes 计入首次注册的节点"
+  - "注入原缺陷（改回错位 VALUES）后测试转红"
+  - "既有 45 条用例不回归"

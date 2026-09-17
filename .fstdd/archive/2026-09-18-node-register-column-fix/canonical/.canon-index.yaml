@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-18-node-register-column-fix: proposals/2026-09-18-node-register-column-fix.yaml
+specs:
+  agent:
+    2026-09-18-node-register-column-fix: specs/agent/2026-09-18-node-register-column-fix.yaml
+  code:
+    2026-09-18-node-register-column-fix: specs/code/2026-09-18-node-register-column-fix.yaml
+version: '2.9'

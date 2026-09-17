@@ -1,0 +1,52 @@
+baseline:
+  at: '2026-09-17T18:45:48+00:00'
+  base_git_sha: e082c1746114040b3f5422503e97494249c3da4e
+  clock_source: system
+  established_by: gate1
+  node_id: DESKTOP-1MEQDMR
+change_id: 2026-09-18-node-register-column-fix
+complexity_score: null
+current_phase: deliver
+design_adjustments:
+  count: 0
+last_modified: '2026-09-17T18:45:50+00:00'
+mode: standard
+phases:
+  build:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T18:45:51+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: 真实中枢验证：两节点 status=online、指纹为真实 SHA256 值、online_nodes=2 正确；探针已清理；45
+      passed；注入原缺陷后测试转红。
+    status: completed
+  deliver:
+    status: pending
+  spec:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T18:45:49+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: 2 REQ / 3 SC，含缺陷可复现守卫（注入原缺陷须转红）。
+    status: completed
+  understand:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-17T18:45:48+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：继续。发现路径为补验 QA 遗留盲区（register 写路径从未对真实中枢跑过）。生产数据已受影响，属热修，实现先于
+      change 完成。
+    status: completed
+score_confidence: null
+status: archived
+task_type: code
+slices:
+  A:
+    tc_coverage:
+    - SC-001
+    - SC-002
+    - SC-003
+    new_tests: 1
+    verified_at: '2026-09-18T02:55:00+08:00'
+traceability:
+  spec_scenarios: 3
+  tc_cases: 3
+  test_functions: 1
+version: '3.0'

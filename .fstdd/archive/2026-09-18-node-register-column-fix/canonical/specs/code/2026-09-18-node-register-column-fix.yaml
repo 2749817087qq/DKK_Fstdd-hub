@@ -1,0 +1,27 @@
+# spec.yaml — 行为规格（Canonical YAML）
+
+meta:
+  capability: "节点注册字段正确性"
+  change_id: "2026-09-18-node-register-column-fix"
+  created: "2026-09-17T18:47:00+00:00"
+  confidence: high
+
+requirements:
+  - id: "REQ-001"
+    description: "节点注册必须把各字段写入正确的列"
+    scenarios:
+      - id: "SC-001"
+        given: "一个全新 node_id"
+        when: "POST /nodes/register 携带 ssh_fingerprint=SHA256:xxx"
+        then: "库中 status SHALL 为 'online'，ssh_fingerprint SHALL 为 'SHA256:xxx'"
+      - id: "SC-002"
+        given: "一个全新 node_id 刚完成首次注册"
+        when: "GET /health"
+        then: "online_nodes SHALL 包含该节点（不得因 status 异常而漏算）"
+  - id: "REQ-002"
+    description: "该缺陷必须有测试守卫，防止复发"
+    scenarios:
+      - id: "SC-003"
+        given: "守卫测试已存在"
+        when: "把 VALUES 改回错位版本"
+        then: "测试 SHALL 转红"

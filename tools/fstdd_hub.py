@@ -362,9 +362,13 @@ class HubHandler(BaseHTTPRequestHandler):
         node = validate_node(payload)
         now = time.time()
         stamp = utc_now()
+        # ⚠️ 列与占位符必须严格对齐：ssh_fingerprint 在第 6 列、status 在第 7 列。
+        # 此前 VALUES 第 6 个是字面量 'online'，导致两列整体错位 ——
+        # ssh_fingerprint 被写成 'online'（原值永久丢失），而首次插入的 status
+        # 变成指纹串（/health 的 online_nodes 按 status='online' 计数，会漏算新节点）。
         conn.execute("""INSERT INTO nodes(node_id,machine_name,platform,os,capabilities_json,
                      ssh_fingerprint,status,last_seen,metadata_json,updated_at)
-                     VALUES (?,?,?,?,?,'online',?,?,?,?)
+                     VALUES (?,?,?,?,?,?,'online',?,?,?)
                      ON CONFLICT(node_id) DO UPDATE SET machine_name=excluded.machine_name,
                      platform=excluded.platform, os=excluded.os,
                      capabilities_json=excluded.capabilities_json, ssh_fingerprint=excluded.ssh_fingerprint,

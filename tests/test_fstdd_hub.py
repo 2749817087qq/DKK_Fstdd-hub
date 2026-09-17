@@ -70,6 +70,26 @@ def task_payload(key="create-1"):
     }
 
 
+def test_register_persists_fingerprint_and_online_status(hub):
+    """列错位回归守卫。
+
+    此前 INSERT 的 VALUES 第 6 个是字面量 'online'，而第 6 列是 ssh_fingerprint、
+    第 7 列才是 status —— 两列整体错位：
+      * ssh_fingerprint 被写成 'online'（真实指纹永久丢失）
+      * 首次插入的 status 变成指纹串，直到第二次注册才被 ON CONFLICT 兜回 'online'
+    /health 的 online_nodes 按 status='online' 计数，因此**首次注册的节点会被漏算**。
+    """
+    register(hub, "FRESH")           # helper 传 ssh_fingerprint="SHA256:test"
+    _, body = call(hub, "GET", "/nodes")
+    row = next(n for n in body["nodes"] if n["node_id"] == "FRESH")
+    assert row["status"] == "online"
+    assert row["ssh_fingerprint"] == "SHA256:test"
+
+    # 首次注册即计入在线数（此前会漏算）
+    _, health = call(hub, "GET", "/health")
+    assert health["online_nodes"] == 1
+
+
 def test_health_and_node_registration_are_idempotent(hub):
     assert call(hub, "GET", "/health")[0] == 200
     assert register(hub)[0] == 200

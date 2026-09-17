@@ -1,0 +1,25 @@
+# agent_spec.yaml — Agent 验证规格（Canonical YAML）
+
+meta:
+  task_id: "node-register-column-fix-verification"
+  change_id: "2026-09-18-node-register-column-fix"
+  created: "2026-09-17T18:47:00+00:00"
+  task_type: code
+  system: "FSTDD 中枢 fstdd_hub.py（仅听 127.0.0.1:8788，本地需经 SSH 隧道访问）"
+
+preconditions:
+  - "SSH 隧道已建立"
+  - "修复已部署，服务 active"
+
+steps:
+  - action: "用 hub_client.register() 对真实中枢注册两个节点（带真实 SSH 公钥指纹）"
+    verify: "GET /nodes 中 status=='online' 且 ssh_fingerprint 以 'SHA256:' 开头"
+  - action: "GET /health 核对 online_nodes"
+    verify: "等于实际节点数（首次注册不再被漏算）"
+  - action: "注入原缺陷（VALUES 改回错位）跑测试"
+    verify: "测试转红"
+
+expected_outcomes:
+  - "两个节点字段均正确，/health 计数正确"
+  - "探针节点已清理，生产库无脏数据"
+  - "45 passed，缺陷注入可被测出"
