@@ -1,0 +1,49 @@
+baseline:
+  at: '2026-09-18T01:27:48+00:00'
+  base_git_sha: b77ca1d785b43faa95ec68da015b1a4bb4e81e81
+  clock_source: system
+  established_by: gate1
+  node_id: DESKTOP-1MEQDMR
+change_id: 2026-09-18-lease-observability
+complexity_score: null
+current_phase: deliver
+design_adjustments:
+  count: 0
+last_modified: '2026-09-18T01:37:08+00:00'
+mode: standard
+phases:
+  build:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-18T01:37:07+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: 51 passed。变异 6 个，4 杀 2 存活（M1 冗余路径但覆盖老库迁移、M5 第二层防线天然不可观测，均非测试缺失）。真实环境：生产库确认无
+      last_owner_node_id 列，部署后迁移成功且数据零改动（tasks=2/nodes=2/messages=9）。行为验证在迁移前的生产数据副本上完成，用真实两节点跑通四种语义，接管通知可达。
+    slices_completed:
+      A:
+        new_tests: 6
+        tc_coverage: SC-001,SC-002,SC-003,SC-004,SC-005,SC-006,SC-007,SC-008,SC-009
+        verified_at: '2026-09-18T09:50:00+08:00'
+    status: completed
+  deliver:
+    status: in_progress
+  spec:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-18T01:27:51+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: 5 REQ / 9 SC，覆盖可续租、错误码可区分、接管通知（含非接管者触发回收的场景）、真并发、老库迁移。
+    status: completed
+  understand:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-18T01:27:48+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：继续（第二轮闭环，聚焦多机多 agent）。发现路径为主动排查多 agent 并发与租约生命周期，探针实测证实。属热修，实现先于
+      change 完成。
+    status: completed
+score_confidence: null
+status: archived
+task_type: code
+traceability:
+  spec_scenarios: 0
+  tc_cases: 0
+  test_functions: 0
+version: '3.0'

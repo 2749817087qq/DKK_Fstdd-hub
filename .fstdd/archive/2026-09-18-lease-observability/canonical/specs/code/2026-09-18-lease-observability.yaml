@@ -1,0 +1,64 @@
+# spec.yaml — 行为规格（Canonical YAML）
+
+meta:
+  capability: "任务租约生命周期"
+  change_id: "2026-09-18-lease-observability"
+  created: "2026-09-18T09:40:00+08:00"
+  confidence: high
+
+requirements:
+  - id: "REQ-001"
+    description: "租约过期不等于原 owner 失效"
+    scenarios:
+      - id: "SC-001"
+        given: "节点 A 持有任务租约，租约已过期，且任务未被回收、未被接管"
+        when: "A 调用 heartbeat 或 complete"
+        then: "SHALL 返回 200，租约得以续期 / 任务得以完成"
+      - id: "SC-002"
+        given: "节点 A 持有任务租约且已过期，任务已被回收回 pending 池且无人接管"
+        when: "A 调用 heartbeat"
+        then: "SHALL 返回 400 且 error_code == lease_reaped，语义为「可以重新 claim 继续干」"
+
+  - id: "REQ-002"
+    description: "语义相反的失败必须给出不同的错误码"
+    scenarios:
+      - id: "SC-003"
+        given: "任务已被节点 B 接管"
+        when: "原 owner A 调用 heartbeat"
+        then: "SHALL 返回 400 且 error_code == task_taken_over，错误文本 SHALL 含接管者 node_id"
+      - id: "SC-004"
+        given: "A 已对本任务 complete 成功"
+        when: "A 再次调用 heartbeat"
+        then: "SHALL 返回 400 且 error_code == lease_released（而非暗示 A 不是 owner）"
+      - id: "SC-005"
+        given: "lease_reaped 与 task_taken_over 两种响应"
+        when: "比较两者的 error_code"
+        then: "SHALL 不相同"
+
+  - id: "REQ-003"
+    description: "接管必须通知原 owner，不能静默"
+    scenarios:
+      - id: "SC-006"
+        given: "A 的租约过期，任务被回收"
+        when: "B claim 该任务"
+        then: "SHALL 给 A 发一条私信（kind=notice，from=B，to=A，带 task_id）"
+      - id: "SC-007"
+        given: "回收由 GET /tasks 触发（而非由接管者的 claim 触发）"
+        when: "B 随后 claim 该任务"
+        then: "仍 SHALL 通知 A —— 上一任 owner 必须来自持久化字段，不能依赖同一次调用的 reap 返回值"
+
+  - id: "REQ-004"
+    description: "真并发 claim 只能有一个赢家"
+    scenarios:
+      - id: "SC-008"
+        given: "池中有 1 个 pending 任务"
+        when: "8 个线程（两个节点）同时 claim"
+        then: "SHALL 恰有 1 个返回 200，其余全部 204"
+
+  - id: "REQ-005"
+    description: "老库结构必须能自动迁移"
+    scenarios:
+      - id: "SC-009"
+        given: "一个缺少 last_owner_node_id 列的既有数据库"
+        when: "init_db 运行"
+        then: "SHALL 补上该列（CREATE TABLE IF NOT EXISTS 不补列，必须显式迁移）"

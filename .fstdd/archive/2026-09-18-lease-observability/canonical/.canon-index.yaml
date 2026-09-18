@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-18-lease-observability: proposals/2026-09-18-lease-observability.yaml
+specs:
+  agent:
+    2026-09-18-lease-observability: specs/agent/2026-09-18-lease-observability.yaml
+  code:
+    2026-09-18-lease-observability: specs/code/2026-09-18-lease-observability.yaml
+version: '2.9'

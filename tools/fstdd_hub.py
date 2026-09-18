@@ -27,6 +27,25 @@ from urllib.parse import parse_qs, urlparse
 MAX_REQUEST_BYTES = 1024 * 1024
 DEFAULT_LEASE_SECONDS = 300
 MAX_LEASE_SECONDS = 3600
+
+
+class LeaseError(ValueError):
+    """租约/归属校验失败，带机器可读的 error_code。
+
+    此前所有失败都返回同一句 "invalid task owner or lease token"，调用方（另一个
+    agent）无法区分下面几种语义完全相反的情况：
+
+      * 租约过期、任务已回到池子、还没人接手 -> 应该重新 claim 继续干
+      * 任务已被别的节点接管                -> 应该立刻停手，别白做
+      * 自己已经 complete/fail 过了          -> 无事可做，别重试
+
+    三者都返回同一句话，原 owner 只能猜 —— 多 agent 场景下这是静默的错误放大：
+    猜错方向要么和别人重复劳动，要么把已完成的活白扔掉。
+    """
+
+    def __init__(self, message: str, code: str):
+        super().__init__(message)
+        self.code = code
 TASK_STATUSES = ("pending", "claimed", "running", "done", "failed", "blocked")
 MESSAGE_KINDS = ("question", "blocker", "status", "notice")
 
@@ -54,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     scope_json TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     owner_node_id TEXT,
+    last_owner_node_id TEXT,
     lease_token_hash TEXT,
     lease_expires_at REAL,
     attempt INTEGER NOT NULL DEFAULT 0,
@@ -126,10 +146,22 @@ def connect_db(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """轻量迁移：给**已存在**的表补上后加的列。
+
+    CREATE TABLE IF NOT EXISTS 对已存在的表不会补列 —— 生产库是旧表结构，
+    只靠 SCHEMA 常量永远加不上 last_owner_node_id，于是接管通知会静默不发。
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+    if "last_owner_node_id" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN last_owner_node_id TEXT")
+
+
 def init_db(path: Path) -> None:
     conn = connect_db(path)
     try:
         conn.executescript(SCHEMA)
+        _ensure_columns(conn)
     finally:
         conn.close()
 
@@ -206,15 +238,29 @@ def row_task(row: sqlite3.Row) -> dict:
     }
 
 
-def reap_expired(conn: sqlite3.Connection) -> int:
+def reap_expired(conn: sqlite3.Connection) -> list[dict]:
+    """回收所有过期租约，返回被回收任务的明细（含原 owner）。
+
+    ⚠️ 这里**只回收、不通知** —— 是否通知由调用方决定。因为 GET /tasks 也会调用
+    本函数（列一次表就回收一次），若在函数内发通知，一次普通的列表查询就会给所有
+    心跳落后的节点刷一堆消息。
+    """
     now = time.time()
-    cur = conn.execute(
-        "UPDATE tasks SET status='pending', owner_node_id=NULL, lease_token_hash=NULL, "
+    rows = conn.execute(
+        "SELECT task_id, owner_node_id FROM tasks WHERE status IN ('claimed','running') "
+        "AND lease_expires_at IS NOT NULL AND lease_expires_at < ?",
+        (now,),
+    ).fetchall()
+    if not rows:
+        return []
+    conn.execute(
+        "UPDATE tasks SET status='pending', last_owner_node_id=owner_node_id, "
+        "owner_node_id=NULL, lease_token_hash=NULL, "
         "lease_expires_at=NULL, updated_at=? WHERE status IN ('claimed','running') "
         "AND lease_expires_at IS NOT NULL AND lease_expires_at < ?",
         (utc_now(), now),
     )
-    return cur.rowcount
+    return [{"task_id": r["task_id"], "previous_owner": r["owner_node_id"]} for r in rows]
 
 
 class HubHandler(BaseHTTPRequestHandler):
@@ -337,6 +383,8 @@ class HubHandler(BaseHTTPRequestHandler):
                 self._ack(conn, path.split("/")[2], payload)
             else:
                 self._json(404, {"error": "not found"})
+        except LeaseError as exc:
+            self._json(400, {"error": str(exc), "error_code": exc.code})
         except ValueError as exc:
             self._json(400, {"error": str(exc)})
         except sqlite3.IntegrityError as exc:
@@ -419,7 +467,7 @@ class HubHandler(BaseHTTPRequestHandler):
             return
         conn.execute("BEGIN IMMEDIATE")
         try:
-            reap_expired(conn)
+            reaped = reap_expired(conn)
             row = conn.execute("SELECT * FROM tasks WHERE status='pending' ORDER BY created_at LIMIT 1").fetchone()
             if row is None:
                 conn.execute("ROLLBACK")
@@ -431,11 +479,37 @@ class HubHandler(BaseHTTPRequestHandler):
             token = secrets.token_urlsafe(32)
             expires = time.time() + lease
             stamp = utc_now()
-            conn.execute("""UPDATE tasks SET status='claimed', owner_node_id=?, lease_token_hash=?,
-                         lease_expires_at=?, attempt=attempt+1, updated_at=? WHERE task_id=? AND status='pending'""",
-                         (node_id, token_hash(token), expires, stamp, row["task_id"]))
-            body = {"task": row_task(conn.execute("SELECT * FROM tasks WHERE task_id=?", (row["task_id"],)).fetchone()),
-                    "lease_token": token}
+            cur = conn.execute("""UPDATE tasks SET status='claimed', owner_node_id=?, lease_token_hash=?,
+                         lease_expires_at=?, attempt=attempt+1, updated_at=?, last_owner_node_id=?
+                         WHERE task_id=? AND status='pending'""",
+                         (node_id, token_hash(token), expires, stamp, node_id, row["task_id"]))
+            if not cur.rowcount:
+                # 防御性校验：UPDATE 自带 AND status='pending' 守卫，未命中说明状态在
+                # 事务控制之外被改过。此时绝不能假装成功 —— 否则会把同一个任务交给
+                # 两个 agent。真并发由 BEGIN IMMEDIATE 挡住，这里守的是其它路径。
+                conn.execute("ROLLBACK")
+                self._json(409, {"error": "task state changed before claim; retry",
+                                 "error_code": "claim_lost_race"})
+                return
+            fresh = conn.execute("SELECT * FROM tasks WHERE task_id=?", (row["task_id"],)).fetchone()
+            body = {"task": row_task(fresh), "lease_token": token}
+            # 接管通知：我拿到的这个任务，刚才是别人的（租约过期被回收）。
+            # 原 owner 此刻可能还在闷头干活，且它下一次心跳会收到 task_taken_over ——
+            # 但在那之前它无从知晓。主动发一条私信，让它尽早停手。
+            # ⚠️ 上一任 owner 必须从**持久化字段**读，不能用本次 reap_expired 的返回值：
+            # 触发回收的往往不是接管者（GET /tasks 列一次表就会回收），等真正有人
+            # claim 时早已被清空，通知就永远发不出去。
+            prev = row["last_owner_node_id"] if row["last_owner_node_id"] != node_id else None
+            if prev:
+                notice = (f"[hub] 任务 {row['task_id']} 的租约已过期，已由 {node_id} 接管"
+                          f"（attempt={fresh['attempt']}）。你正在做的工作结果会被丢弃，请停止；"
+                          f"若仍需处理请重新 claim。")
+                conn.execute("""INSERT INTO messages(message_id,conversation_id,task_id,from_node_id,
+                             to_node_id,kind,body,idempotency_key,request_hash,created_at)
+                             VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                             (new_id("msg"), new_id("conv"), row["task_id"], node_id, prev,
+                              "notice", notice, new_id("idem"), request_hash({"t": row["task_id"]}),
+                              utc_now()))
             self._save_idempotent(conn, "task.claim", key, payload, 200, body)
             conn.execute("COMMIT")
         except Exception:
@@ -450,10 +524,35 @@ class HubHandler(BaseHTTPRequestHandler):
         row = conn.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         if not row:
             raise ValueError("task not found")
-        if row["owner_node_id"] != node_id or row["lease_token_hash"] != token_hash(token):
-            raise ValueError("invalid task owner or lease token")
-        if not row["lease_expires_at"] or row["lease_expires_at"] < time.time():
-            raise ValueError("lease expired")
+        mine = row["owner_node_id"] == node_id
+        if not mine:
+            # 已经不是我的了 —— 必须说清楚是哪一种，让调用方知道该重试还是该停手
+            if row["owner_node_id"] is None and row["status"] == "pending":
+                raise LeaseError(
+                    f"lease expired: task {task_id} was returned to the pool and nobody has "
+                    f"taken it yet; re-claim it if you still intend to work on it",
+                    "lease_reaped",
+                )
+            if row["owner_node_id"]:
+                raise LeaseError(
+                    f"task {task_id} is now owned by {row['owner_node_id']} "
+                    f"(status={row['status']}, attempt={row['attempt']}); stop current work, "
+                    f"anything you produce will be discarded",
+                    "task_taken_over",
+                )
+            raise LeaseError("invalid task owner or lease token", "invalid_lease")
+        if row["lease_token_hash"] != token_hash(token):
+            # owner 还是我，但 token 对不上 = 租约已被释放（complete/fail 会清空 token）
+            raise LeaseError(
+                f"your lease on task {task_id} was already released "
+                f"(status={row['status']}); nothing to renew or complete",
+                "lease_released",
+            )
+        # owner 与 token 都对：即便租约已过期也放行。
+        # 「过期」的语义是**别人可以来抢**，不是**我自己不能续** —— 只要 owner 仍是我，
+        # 就说明期间无人接手，续租是安全的。旧实现在这里直接 raise "lease expired"，
+        # 导致长任务心跳晚一秒就被永久锁死：已做的工作全部作废，且收到的错误信息还
+        # 误导它以为自己不是 owner（实测：agent A 续租被拒，理由是"你不是 owner"）。
         return row
 
     def _task_heartbeat(self, conn, task_id, payload):

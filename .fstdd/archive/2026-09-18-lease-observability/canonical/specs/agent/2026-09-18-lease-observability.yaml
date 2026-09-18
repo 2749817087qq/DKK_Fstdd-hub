@@ -1,0 +1,32 @@
+# agent_spec.yaml — Agent 验证规格（Canonical YAML）
+
+meta:
+  task_id: "lease-observability-verification"
+  change_id: "2026-09-18-lease-observability"
+  created: "2026-09-18T09:40:00+08:00"
+  task_type: code
+  system: "FSTDD 中枢 fstdd_hub.py（仅听 127.0.0.1:8788，本地需经 SSH 隧道访问）"
+
+preconditions:
+  - "修复已部署，服务 active"
+  - "SSH 隧道已建立"
+
+steps:
+  - action: "在真实中枢上建任务、A 以 1s 租约 claim、等待过期后直接 heartbeat（不触发 GET）"
+    verify: "返回 200 且 status=running（SC-001）"
+  - action: "列一次 /tasks 触发回收，再 heartbeat"
+    verify: "error_code == lease_reaped（SC-002）"
+  - action: "B claim 同一任务"
+    verify: "B 拿到 200；A 再 heartbeat 得 error_code == task_taken_over 且文本含 B（SC-003/SC-005）"
+  - action: "以 A 身份 GET /messages?node_id=A"
+    verify: "含一条来自 B、带该 task_id 的 notice（SC-006/SC-007）"
+  - action: "注入 6 个已知缺陷跑测试套件"
+    verify: "除天然不可观测者外全部转红"
+  - action: "既有数据与节点不受影响"
+    verify: "存量任务与节点状态不变，/health 正常"
+
+expected_outcomes:
+  - "四种 error_code 语义正确且可区分"
+  - "接管通知可达"
+  - "50 passed，缺陷注入可被测出"
+  - "生产数据零影响"

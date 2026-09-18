@@ -305,3 +305,205 @@ def test_invalid_owner_and_unregistered_node_are_rejected(hub):
     })
     assert status == 400
     assert "not registered" in body["error"]
+
+
+# ---------------------------------------------------------------------------
+# 多 agent 并发与租约生命周期（第二轮闭环补的守卫）
+#
+# 背景：既有的 test_claim_is_atomic_and_returns_lease 名字里写着 atomic，但两次
+# claim 是**串行**的（第二次拿到 204 只是因为池子空了），从没让两个节点在同一
+# 瞬间抢过。而租约过期后原 owner 的处境此前完全无人验证。
+# ---------------------------------------------------------------------------
+
+
+def test_true_concurrent_claim_grants_task_to_exactly_one_node(hub):
+    """真并发守卫：N 个线程同时 claim 同一个任务，只能有一个拿到。
+
+    并发安全实际由 BEGIN IMMEDIATE + 每请求独立连接保证（SQLite 串行化写事务），
+    但没有任何测试守着它 —— 一旦有人把 BEGIN IMMEDIATE 去掉或改成共享连接，
+    两个 agent 就会拿到同一个任务且无人察觉。
+    """
+    import threading
+
+    register(hub, "A")
+    register(hub, "B")
+    assert call(hub, "POST", "/tasks", task_payload("conc-task"))[0] == 201
+
+    n = 8
+    results = []
+    lock = threading.Lock()
+    barrier = threading.Barrier(n)
+
+    def worker(i):
+        node = "A" if i % 2 == 0 else "B"
+        barrier.wait()  # 尽量让所有请求同时打到服务端
+        st, body = call(hub, "POST", "/tasks/claim", {
+            "node_id": node, "idempotency_key": f"conc-{i}", "lease_seconds": 60})
+        with lock:
+            results.append((node, st, body.get("task", {}).get("task_id")))
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+
+    winners = [r for r in results if r[1] == 200]
+    assert len(winners) == 1, f"并发被击穿：{len(winners)} 个节点拿到了同一任务 -> {winners}"
+    assert all(r[1] == 204 for r in results if r[1] != 200), results
+
+
+def test_owner_can_renew_after_lease_expiry_if_nobody_took_over(hub):
+    """「租约过期」的语义是**别人可以来抢**，不是**我自己不能续**。
+
+    旧实现在 _lease_update 里无条件 `raise ValueError("lease expired")`，
+    后果：长任务心跳晚一秒就被永久锁死，已做的工作全部作废，哪怕池子里根本
+    没人接手这个任务。而且它收到的错误是 "invalid task owner or lease token"
+    —— 明明还是 owner，却被自己人的校验拒绝。
+    """
+    import time
+
+    register(hub, "A")
+    call(hub, "POST", "/tasks", task_payload("renew-task"))
+    _, claimed = call(hub, "POST", "/tasks/claim", {
+        "node_id": "A", "idempotency_key": "renew-1", "lease_seconds": 1})
+    tid = claimed["task"]["task_id"]
+    token = claimed["lease_token"]
+
+    time.sleep(1.2)  # 租约已过期；注意**不能**做 GET /tasks，那会触发回收
+    st, body = call(hub, "POST", f"/tasks/{tid}/heartbeat",
+                    {"node_id": "A", "lease_token": token, "lease_seconds": 60})
+    assert st == 200, body
+    assert body["status"] == "running"
+
+    # 续租后仍能正常完成
+    st, body = call(hub, "POST", f"/tasks/{tid}/complete", {
+        "node_id": "A", "lease_token": token, "idempotency_key": "renew-done",
+        "result_git_sha": "cafebabe"})
+    assert st == 200, body
+
+
+def test_lease_failure_reasons_are_distinguishable(hub):
+    """两种语义相反的失败必须给出不同的 error_code。
+
+    - 租约过期、任务已回池、还没人接 -> lease_reaped，调用方应**重新 claim 继续干**
+    - 任务已被别的节点接管            -> task_taken_over，调用方应**立刻停手**
+
+    此前两者都返回同一句 "invalid task owner or lease token"，原 owner 只能猜，
+    猜错就是重复劳动或白扔已完成的工作。
+    """
+    import time
+
+    register(hub, "A")
+    register(hub, "B")
+    call(hub, "POST", "/tasks", task_payload("distinguish-task"))
+    _, claimed = call(hub, "POST", "/tasks/claim", {
+        "node_id": "A", "idempotency_key": "dist-1", "lease_seconds": 1})
+    tid = claimed["task"]["task_id"]
+    token = claimed["lease_token"]
+
+    time.sleep(1.2)
+    call(hub, "GET", "/tasks?status=pending")  # 触发回收（列一次表就回收一次）
+    st, reaped_err = call(hub, "POST", f"/tasks/{tid}/heartbeat",
+                          {"node_id": "A", "lease_token": token, "lease_seconds": 60})
+    assert st == 400
+    assert reaped_err.get("error_code") == "lease_reaped", reaped_err
+
+    # B 接管
+    st, taken = call(hub, "POST", "/tasks/claim", {
+        "node_id": "B", "idempotency_key": "dist-2", "lease_seconds": 60})
+    assert st == 200
+    assert taken["task"]["task_id"] == tid
+
+    st, taken_err = call(hub, "POST", f"/tasks/{tid}/heartbeat",
+                         {"node_id": "A", "lease_token": token, "lease_seconds": 60})
+    assert st == 400
+    assert taken_err.get("error_code") == "task_taken_over", taken_err
+    assert "B" in taken_err["error"]
+
+    # 核心断言：语义相反，错误码必须不同
+    assert reaped_err["error_code"] != taken_err["error_code"]
+
+
+def test_takeover_notifies_the_previous_owner(hub):
+    """被接管时主动通知原 owner —— 它此刻可能还在闷头干活。
+
+    此前租约过期 -> 回收 -> 被别人 claim 全程静默。原 owner 要等到下一次心跳
+    或完成请求被拒才知道，而那时它已经干完了。
+    """
+    import time
+
+    register(hub, "A")
+    register(hub, "B")
+    call(hub, "POST", "/tasks", task_payload("takeover-task"))
+    _, claimed = call(hub, "POST", "/tasks/claim", {
+        "node_id": "A", "idempotency_key": "take-1", "lease_seconds": 1})
+    tid = claimed["task"]["task_id"]
+
+    time.sleep(1.2)
+    call(hub, "GET", "/tasks?status=pending")
+    st, _ = call(hub, "POST", "/tasks/claim", {
+        "node_id": "B", "idempotency_key": "take-2", "lease_seconds": 60})
+    assert st == 200
+
+    _, msgs = call(hub, "GET", f"/messages?node_id=A")
+    mine = [m for m in msgs["messages"] if m["task_id"] == tid]
+    assert mine, f"A 没有收到任何关于 {tid} 的消息"
+    assert any(m["from_node_id"] == "B" and m["to_node_id"] == "A" for m in mine), mine
+
+
+def test_completed_task_reports_lease_released_not_invalid_owner(hub):
+    """自己已经 complete 过，再操作应报 lease_released，而不是"你不是 owner"。
+
+    complete/fail 会清空 lease_token_hash 但保留 owner_node_id，旧逻辑会走到
+    "invalid task owner or lease token" 分支 —— 对调用方是彻底的误导。
+    """
+    register(hub, "A")
+    call(hub, "POST", "/tasks", task_payload("released-task"))
+    _, claimed = call(hub, "POST", "/tasks/claim", {
+        "node_id": "A", "idempotency_key": "rel-1", "lease_seconds": 30})
+    tid = claimed["task"]["task_id"]
+    token = claimed["lease_token"]
+
+    st, _ = call(hub, "POST", f"/tasks/{tid}/complete", {
+        "node_id": "A", "lease_token": token, "idempotency_key": "rel-done",
+        "result_git_sha": "abc"})
+    assert st == 200
+
+    st, body = call(hub, "POST", f"/tasks/{tid}/heartbeat",
+                    {"node_id": "A", "lease_token": token, "lease_seconds": 30})
+    assert st == 400
+    assert body.get("error_code") == "lease_released", body
+
+
+def test_init_db_migrates_legacy_schema_without_last_owner(tmp_path):
+    """老库必须能自动补列 —— CREATE TABLE IF NOT EXISTS 对已存在的表不补列。
+
+    生产库是旧表结构，只靠 SCHEMA 常量**永远**加不上 last_owner_node_id：
+    表已存在时 CREATE TABLE IF NOT EXISTS 直接跳过。于是接管通知会静默不发，
+    而没有任何测试会转红 —— 因为测试全都用全新库，列直接来自 SCHEMA。
+
+    这条路径天然零覆盖：变异测试注入「去掉 _ensure_columns 调用」后 50 条用例
+    依然全绿。本测试让它变得可观测。
+    """
+    import sqlite3
+
+    db = tmp_path / "legacy.sqlite3"
+    legacy_schema = fstdd_hub.SCHEMA.replace("    last_owner_node_id TEXT,\n", "")
+    assert legacy_schema != fstdd_hub.SCHEMA  # 确认确实删掉了，否则本测试形同虚设
+
+    conn = sqlite3.connect(str(db))
+    conn.executescript(legacy_schema)
+    conn.close()
+
+    before = {r[1] for r in sqlite3.connect(str(db)).execute("PRAGMA table_info(tasks)")}
+    assert "last_owner_node_id" not in before
+
+    fstdd_hub.init_db(db)  # 迁移
+
+    conn = fstdd_hub.connect_db(db)
+    try:
+        after = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)")}
+    finally:
+        conn.close()
+    assert "last_owner_node_id" in after
