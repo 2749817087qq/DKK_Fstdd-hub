@@ -1,0 +1,44 @@
+# spec.yaml — 行为规格（Canonical YAML）
+
+meta:
+  capability: "任务分支集成准入"
+  change_id: "2026-09-18-integration-remote-check"
+  created: "2026-09-18T10:20:00+08:00"
+  confidence: high
+
+requirements:
+  - id: "REQ-001"
+    description: "集成准入必须包含远端视角"
+    scenarios:
+      - id: "SC-001"
+        given: "本地 target 在正确的分支上且工作区干净，但已落后上游（别的机器推送过）"
+        when: "调用 integrate_task_branch"
+        then: "SHALL 抛 GitIsolationError，消息 SHALL 含 'behind' 与上游引用名"
+      - id: "SC-002"
+        given: "集成因落后上游被拦"
+        when: "检查本地 target 分支的 sha"
+        then: "SHALL 与调用前一致 —— 不得产生需要 rebase 才能收拾的分叉"
+
+  - id: "REQ-002"
+    description: "不得破坏离线与单机使用"
+    scenarios:
+      - id: "SC-003"
+        given: "仓库没有配置上游（纯本地仓库）"
+        when: "调用 integrate_task_branch"
+        then: "SHALL 正常集成，不得因遥测不到远端而拒绝"
+      - id: "SC-004"
+        given: "调用方显式传入 check_remote=False（或 CLI --no-check-remote）"
+        when: "本地落后上游"
+        then: "SHALL 放行并完成集成"
+
+  - id: "REQ-003"
+    description: "远端状态未知时不得假装已知"
+    scenarios:
+      - id: "SC-005"
+        given: "fetch 失败（网络/代理故障、凭据不可用）"
+        when: "调用 integrate_task_branch"
+        then: "SHALL 抛 GitIsolationError 说明远端状态未知并提示可绕过，而非静默放行"
+      - id: "SC-006"
+        given: "fetch 过程中远端要求交互式凭据"
+        when: "调用 integrate_task_branch"
+        then: "SHALL 立即失败而非挂起（GIT_TERMINAL_PROMPT=0）"

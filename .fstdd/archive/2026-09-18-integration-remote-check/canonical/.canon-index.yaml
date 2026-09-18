@@ -1,0 +1,9 @@
+designs: {}
+proposals:
+  2026-09-18-integration-remote-check: proposals/2026-09-18-integration-remote-check.yaml
+specs:
+  agent:
+    2026-09-18-integration-remote-check: specs/agent/2026-09-18-integration-remote-check.yaml
+  code:
+    2026-09-18-integration-remote-check: specs/code/2026-09-18-integration-remote-check.yaml
+version: '2.9'

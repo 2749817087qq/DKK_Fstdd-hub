@@ -1,0 +1,33 @@
+# agent_spec.yaml — Agent 验证规格（Canonical YAML）
+
+meta:
+  task_id: "integration-remote-check-verification"
+  change_id: "2026-09-18-integration-remote-check"
+  created: "2026-09-18T10:20:00+08:00"
+  task_type: code
+  system: "fstdd_git.py（节点本地 git 隔离与集成工具，纯本地操作 + 可选远端检查）"
+
+preconditions:
+  - "本机 git 可用"
+  - "测试套件可运行（无需网络：双机夹具用本地裸库，不走真实远端）"
+
+steps:
+  - action: "用 make_remote_pair 建裸库 + 两个 clone，A 集成推送成功后让 B 集成"
+    verify: "B 被 GitIsolationError 拦下，消息含 behind 与 origin/master（SC-001）"
+  - action: "对比 B 在集成前后的 master sha"
+    verify: "未变更（SC-002）"
+  - action: "以 check_remote=False 重试"
+    verify: "集成成功（SC-004）"
+  - action: "对无上游的纯本地仓库集成"
+    verify: "正常成功（SC-003）"
+  - action: "跑全量测试套件"
+    verify: "54 passed，既有 51 条不回归"
+
+expected_outcomes:
+  - "四种场景行为符合规格"
+  - "测试全绿"
+  - "节点侧工具更新已分发到服务器对应目录"
+
+note: |
+  本 change 的验证**不需要真实远端**：双机夹具用本地裸库模拟，因此不受
+  本机 GitHub 代理时段性故障影响（记忆第 9 条）。

@@ -1,0 +1,49 @@
+baseline:
+  at: '2026-09-18T03:01:05+00:00'
+  base_git_sha: 93f9dacf32e990e458d8e1d8b5cc35fec12896da
+  clock_source: system
+  established_by: gate1
+  node_id: DESKTOP-1MEQDMR
+change_id: 2026-09-18-integration-remote-check
+complexity_score: null
+current_phase: deliver
+design_adjustments:
+  count: 0
+last_modified: '2026-09-18T03:01:54+00:00'
+mode: standard
+phases:
+  build:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-18T03:01:53+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: 54 passed。变异 3 个，2 杀 1 存活（M3 为等价变异体：去掉早退后 git fetch 空串被当作自拉取返回
+      0，语义未变，实测诊断确认）。双机夹具覆盖落后远端被拦/本地未改动/显式绕过/无上游放行四种场景，不走真实远端因此不受代理故障影响。
+    slices_completed:
+      A:
+        new_tests: 3
+        tc_coverage: SC-001,SC-002,SC-003,SC-004,SC-005,SC-006
+        verified_at: '2026-09-18T10:55:00+08:00'
+    status: completed
+  deliver:
+    status: in_progress
+  spec:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-18T03:01:06+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: 3 REQ / 6 SC：集成前远端一致性、不破坏离线（无上游放行 + 显式绕过）、远端未知时不得假装已知。
+    status: completed
+  understand:
+    confirmed_actor: ai
+    confirmed_at: '2026-09-18T03:01:05+00:00'
+    confirmed_by: dialog
+    confirmed_evidence: D哥：继续。第三轮，聚焦多机集成。双机探针（裸库+两个 clone）实测证明，非代码推断。属热修，实现先于 change
+      完成。
+    status: completed
+score_confidence: null
+status: archived
+task_type: code
+traceability:
+  spec_scenarios: 0
+  tc_cases: 0
+  test_functions: 0
+version: '3.0'

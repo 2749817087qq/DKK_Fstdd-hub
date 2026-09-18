@@ -158,7 +158,44 @@ def scope_conflicts(left: dict, right: dict) -> list[dict]:
     return conflicts
 
 
-def ensure_clean_target(repo: str | Path, target_branch: str = "master") -> Path:
+def ensure_target_up_to_date(root: Path, target_branch: str = "master") -> None:
+    """确认本地 target 分支不落后于远端，否则集成后必然推不上去。
+
+    ⚠️ 多机场景下「本地干净」**不等于**「可以集成」：
+    ensure_clean_target 只检查本地工作区，而别的机器可能已经推送了新提交。
+    本地看着干净 -> ff-only 合并成功 -> 推送被拒 -> **本地 master 与远端分叉**，
+    必须手动 rebase 才能重来。这个错误在**推送**时才暴露，发现得太晚。
+
+    实测（双 clone 模拟两台机器）：B 不 fetch 时 ensure_clean_target 一路绿灯，
+    集成本地成功，推送报 `! [rejected] master -> master (fetch first)`。
+
+    没有 upstream 的纯本地仓库无从比较，直接放行（不破坏离线/单机使用）。
+    """
+    up = _run(root, "rev-parse", "--abbrev-ref", f"{target_branch}@{{upstream}}", check=False)
+    if up.returncode != 0 or not up.stdout.strip():
+        return  # 没有上游（纯本地仓库），无从比较
+    remote_ref = up.stdout.strip()
+    remote = remote_ref.split("/", 1)[0]
+    # GIT_TERMINAL_PROMPT=0：远端不可达时立刻失败，不要卡在交互式凭据输入上
+    # （本机经代理访问 GitHub，代理时段性故障时很容易挂住）。
+    env = dict(__import__("os").environ, GIT_TERMINAL_PROMPT="0")
+    fetch = subprocess.run(["git", "fetch", "--quiet", remote], cwd=str(root), text=True,
+                           capture_output=True, encoding="utf-8", errors="replace", env=env)
+    if fetch.returncode != 0:
+        raise GitIsolationError(
+            f"cannot fetch {remote}; refusing to integrate because the remote state is "
+            f"unknown. If you are certain nobody else has pushed, re-run with "
+            f"check_remote=False")
+    behind = _run(root, "rev-list", "--count", f"{target_branch}..{remote_ref}").stdout.strip()
+    if behind and behind != "0":
+        raise GitIsolationError(
+            f"target branch {target_branch} is {behind} commit(s) behind {remote_ref}; "
+            f"pull or rebase before integrating, otherwise the merge succeeds locally "
+            f"but the push is rejected and your branch diverges")
+
+
+def ensure_clean_target(repo: str | Path, target_branch: str = "master",
+                        check_remote: bool = True) -> Path:
     root = repo_root(repo)
     branch = _run(root, "symbolic-ref", "--short", "HEAD").stdout.strip()
     if branch != target_branch:
@@ -166,18 +203,21 @@ def ensure_clean_target(repo: str | Path, target_branch: str = "master") -> Path
     status = _run(root, "status", "--porcelain").stdout.strip()
     if status:
         raise GitIsolationError("integration target has uncommitted changes")
+    if check_remote:
+        ensure_target_up_to_date(root, target_branch)
     return root
 
 
 def integrate_task_branch(repo: str | Path, task_branch_name: str,
-                          target_branch: str = "master") -> dict:
+                          target_branch: str = "master",
+                          check_remote: bool = True) -> dict:
     """Merge a task branch serially into a clean target branch.
 
     The default fast-forward-only policy prevents an unexpected merge commit
     from hiding a divergent base.  Conflicts are returned as an exception and
     must be recorded as BLOCKED by the control plane.
     """
-    root = ensure_clean_target(repo, target_branch)
+    root = ensure_clean_target(repo, target_branch, check_remote=check_remote)
     if not task_branch_name.startswith("task/"):
         raise GitIsolationError("only task/* branches may be integrated")
     task_sha = _run(root, "rev-parse", task_branch_name).stdout.strip()
@@ -203,6 +243,8 @@ def _main() -> int:
     p_merge.add_argument("repo")
     p_merge.add_argument("task_branch")
     p_merge.add_argument("--target", default="master")
+    p_merge.add_argument("--no-check-remote", action="store_true",
+                         help="跳过「本地是否落后远端」检查（离线且确认无人推送时才用）")
     args = parser.parse_args()
     try:
         if args.command == "create-worktree":
@@ -210,7 +252,8 @@ def _main() -> int:
         elif args.command == "scope-conflicts":
             result = scope_conflicts(json.loads(args.left_json), json.loads(args.right_json))
         else:
-            result = integrate_task_branch(args.repo, args.task_branch, args.target)
+            result = integrate_task_branch(args.repo, args.task_branch, args.target,
+                                          check_remote=not args.no_check_remote)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (GitIsolationError, ValueError, OSError) as exc:
